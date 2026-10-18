@@ -1,0 +1,37 @@
+[
+  {
+    "status": "success",
+    "overall_similarity_score": 28,
+    "classification_level": "Sedang",
+    "document_metadata": {
+      "nim": "11241002",
+      "nama": "Ni Kadek Contoh",
+      "judul": "Sistem Informasi Monitoring Skripsi Berbasis Web",
+      "jenis_dokumen": "Proposal Tugas Akhir"
+    },
+    "structure_analysis": {
+      "Cover": true,
+      "Bab I Pendahuluan": true,
+      "Bab II Tinjauan Pustaka": true,
+      "Bab III Metodologi": false
+    },
+    "flagged_passages": [
+      {
+        "text": "Pengembangan aplikasi deteksi plagiarisme menggunakan kecerdasan buatan berbasis Large Language Model...",
+        "similarity_percentage": 85,
+        "source_reference": "Repository TA 2024 - 'Deteksi Plagiat Teks Menggunakan LLM'"
+      }
+    ],
+    "id": "PLG-20261018-7D5AD01D",
+    "created_at": "2026-10-18T04:24:19.340Z",
+    "analysis_engine": "simulasi-llm-v1 (mock data, progress 30%)",
+    "berkas": {
+      "nama_asli": "uji-proposal-ta.pdf",
+      "nama_tersimpan": "dokumen-1792297459336-0e519578.pdf",
+      "ekstensi": ".pdf",
+      "mime_type": "application/pdf",
+      "ukuran_byte": 49,
+      "ukuran": "49 B"
+    }
+  }
+]

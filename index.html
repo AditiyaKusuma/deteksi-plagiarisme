@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Beranda &mdash; Deteksi Plagiarisme</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #0d6efd; }
+
+    body {
+      background:
+        radial-gradient(1100px 420px at 10% -10%, #e7f0ff 0%, transparent 60%),
+        radial-gradient(900px 380px at 100% 0%, #eafaf3 0%, transparent 55%),
+        #f4f6fb;
+      min-height: 100vh;
+    }
+
+    .navbar-brand-icon {
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .18);
+      border-radius: .6rem;
+    }
+
+    .card { border: 1px solid rgba(15, 23, 42, .07); border-radius: 1rem; }
+    .card-header { border-radius: 1rem 1rem 0 0 !important; }
+    .min-w-0 { min-width: 0; }
+
+    /* ---------- Hero ---------- */
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: .4rem;
+      background: #eef4ff; color: var(--brand);
+      border: 1px solid #d7e5ff;
+      border-radius: 999px;
+      padding: .3rem .75rem;
+      font-size: .78rem; font-weight: 600;
+    }
+    .hero-title { font-weight: 700; letter-spacing: -.02em; }
+    .hero-lead { color: #5a6474; }
+
+    /* ---------- Kartu contoh hasil ---------- */
+    .score-ring {
+      width: 108px; height: 108px; border-radius: 50%;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: conic-gradient(#ffc107 0 34%, #e9eef6 34% 100%);
+      flex: 0 0 108px;
+    }
+    .score-ring .inner {
+      width: 84px; height: 84px; border-radius: 50%; background: #fff;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .score-ring .val { font-size: 1.35rem; font-weight: 700; line-height: 1; }
+    .score-ring .lbl { font-size: .62rem; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
+
+    .bar-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .55rem; }
+    .bar-row .bar-label { width: 120px; font-size: .78rem; color: #5a6474; }
+    .bar-row .progress { flex: 1; height: 7px; }
+    .bar-row .bar-val { font-size: .78rem; font-weight: 600; width: 38px; text-align: right; }
+
+    /* ---------- Langkah ---------- */
+    .step {
+      display: flex; gap: .9rem; align-items: flex-start;
+      padding: 1rem;
+      border: 1px solid #e5eaf3;
+      border-radius: .85rem;
+      background: #fff;
+      height: 100%;
+    }
+    .step .step-no {
+      width: 34px; height: 34px; flex: 0 0 34px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 50%; background: #eef4ff; color: var(--brand);
+      font-weight: 700; font-size: .9rem;
+    }
+    .step .step-title { font-weight: 600; font-size: .95rem; }
+    .step .step-desc { font-size: .82rem; color: #6b7280; }
+
+    .stat-tile { border: 1px solid #e5eaf3; border-radius: .75rem; padding: .85rem 1rem; height: 100%; }
+    .stat-tile .tile-label { font-size: .72rem; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; }
+    .stat-tile .tile-value { font-weight: 700; font-size: 1.35rem; line-height: 1.2; }
+
+    .feature-icon {
+      width: 44px; height: 44px; flex: 0 0 44px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: .75rem; background: #eef4ff; color: var(--brand); font-size: 1.25rem;
+    }
+
+    footer { color: #7c8698; font-size: .82rem; }
+  </style>
+</head>
+<body>
+
+  <!-- ============ NAVBAR ============ -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold" href="index.html">
+        <span class="navbar-brand-icon"><i class="bi bi-shield-check"></i></span>
+        <span>Deteksi Plagiarisme</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navMain">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
+          <li class="nav-item"><a class="nav-link active" href="index.html"><i class="bi bi-house-door me-1"></i>Beranda</a></li>
+          <li class="nav-item"><a class="nav-link" href="upload.html"><i class="bi bi-cloud-arrow-up me-1"></i>Unggah Dokumen</a></li>
+          <li class="nav-item"><a class="nav-link" href="riwayat.html"><i class="bi bi-clock-history me-1"></i>Riwayat</a></li>
+
+          <!-- Belum masuk -->
+          <li class="nav-item ms-lg-2" id="navMasukItem">
+            <a class="btn btn-light btn-sm fw-semibold px-3" href="login.html">
+              <i class="bi bi-box-arrow-in-right me-1"></i>Masuk
+            </a>
+          </li>
+
+          <!-- Sudah masuk -->
+          <li class="nav-item dropdown d-none" id="navUserItem">
+            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+              <i class="bi bi-person-circle me-1"></i><span id="navNamaPengguna">Pengguna</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="upload.html"><i class="bi bi-cloud-arrow-up me-2"></i>Unggah Dokumen</a></li>
+              <li><a class="dropdown-item" href="riwayat.html"><i class="bi bi-clock-history me-2"></i>Riwayat Saya</a></li>
+              <li><a class="dropdown-item" href="login-admin.html"><i class="bi bi-shield-lock me-2"></i>Masuk sebagai Admin</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item text-danger" href="#" id="navLogout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4 py-lg-5">
+
+    <!-- ============ HERO ============ -->
+    <section class="row g-4 g-lg-5 align-items-center mb-5">
+      <div class="col-lg-6">
+        <span class="hero-badge mb-3">
+          <i class="bi bi-stars"></i>Analisis berbasis AI &amp; Large Language Model
+        </span>
+        <h1 class="hero-title h2 mb-3">
+          Deteksi Plagiarisme
+        </h1>
+        <p class="hero-lead mb-4">
+          Unggah proposal atau laporan Tugas Akhir, lalu periksa <strong>indikasi plagiarisme</strong>
+          dan <strong>kelengkapan struktur dokumen</strong> secara otomatis. Hasil pemeriksaan
+          tersimpan sehingga dapat dibuka kembali kapan saja.
+        </p>
+
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <a href="upload.html" class="btn btn-primary px-4 py-2">
+            <i class="bi bi-cloud-arrow-up me-2"></i>Mulai Periksa Dokumen
+          </a>
+          <a href="riwayat.html" class="btn btn-outline-secondary px-4 py-2">
+            <i class="bi bi-clock-history me-2"></i>Lihat Riwayat
+          </a>
+        </div>
+
+        <p class="small text-secondary mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          Format PDF, DOC, atau DOCX &middot; maksimal 10 MB per dokumen &middot; teks harus dapat diekstrak.
+        </p>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="card shadow-sm">
+          <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-clipboard-data text-primary me-2"></i>Contoh Hasil Pemeriksaan</h2>
+            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning">
+              <i class="bi bi-exclamation-triangle me-1"></i>Indikasi Sedang
+            </span>
+          </div>
+          <div class="card-body p-3 p-md-4">
+            <div class="d-flex flex-wrap align-items-center gap-4 mb-4">
+              <div class="score-ring">
+                <div class="inner">
+                  <span class="val">34%</span>
+                  <span class="lbl">Kemiripan</span>
+                </div>
+              </div>
+              <div class="flex-grow-1 min-w-0">
+                <div class="small text-secondary mb-1">Judul dokumen</div>
+                <div class="fw-semibold mb-3 text-truncate">
+                  Sistem Informasi Monitoring Skripsi Berbasis Web
+                </div>
+                <div class="small text-secondary mb-1">Struktur dokumen</div>
+                <div class="fw-semibold">
+                  <i class="bi bi-check2-circle text-success me-1"></i>18 dari 20 bagian terdeteksi
+                </div>
+              </div>
+            </div>
+
+            <div class="small text-uppercase text-secondary fw-semibold mb-2" style="letter-spacing:.04em">
+              Sumber kemiripan
+            </div>
+            <div class="bar-row">
+              <span class="bar-label">Sumber Internet</span>
+              <span class="progress"><span class="progress-bar bg-danger" style="width: 55%"></span></span>
+              <span class="bar-val">19%</span>
+            </div>
+            <div class="bar-row">
+              <span class="bar-label">Jurnal/Repositori</span>
+              <span class="progress"><span class="progress-bar" style="width: 32%; background:#fd7e14"></span></span>
+              <span class="bar-val">11%</span>
+            </div>
+            <div class="bar-row mb-0">
+              <span class="bar-label">Dokumen Internal</span>
+              <span class="progress"><span class="progress-bar bg-warning" style="width: 13%"></span></span>
+              <span class="bar-val">4%</span>
+            </div>
+
+            <div class="alert alert-light border mt-4 mb-0 small text-secondary">
+              <i class="bi bi-info-circle me-1"></i>
+              Angka di atas adalah <strong>contoh tampilan</strong>, bukan hasil analisis dokumen nyata.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RINGKASAN AKTIVITAS ============ -->
+    <section class="mb-5" id="ringkasanSection">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="stat-tile">
+            <div class="tile-label">Pemeriksaan Tersimpan</div>
+            <div class="tile-value" id="statTotal">0</div>
+            <div class="small text-secondary" id="statTotalKet">Belum ada pemeriksaan pada perangkat ini.</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="stat-tile">
+            <div class="tile-label">Rata-rata Kemiripan</div>
+            <div class="tile-value" id="statRata">&mdash;</div>
+            <div class="small text-secondary">Dihitung dari pemeriksaan yang tersimpan.</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="stat-tile">
+            <div class="tile-label">Indikasi Tinggi</div>
+            <div class="tile-value text-danger" id="statTinggi">0</div>
+            <div class="small text-secondary">Skor kemiripan 50% atau lebih.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FITUR ============ -->
+    <section class="mb-5" id="fitur">
+      <div class="mb-4">
+        <h2 class="h4 fw-bold mb-1">Fitur Utama</h2>
+        <p class="text-secondary mb-0">Fungsi yang disediakan aplikasi sesuai kebutuhan fungsional sistem.</p>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body d-flex gap-3">
+              <span class="feature-icon"><i class="bi bi-cloud-arrow-up"></i></span>
+              <div>
+                <h3 class="h6 fw-bold mb-1">Unggah Dokumen</h3>
+                <p class="small text-secondary mb-2">
+                  Mengunggah dokumen proposal atau laporan Tugas Akhir untuk diperiksa.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body d-flex gap-3">
+              <span class="feature-icon"><i class="bi bi-file-earmark-text"></i></span>
+              <div>
+                <h3 class="h6 fw-bold mb-1">Ekstraksi &amp; Informasi Dokumen</h3>
+                <p class="small text-secondary mb-2">
+                  Mengambil teks dari dokumen dan menampilkan informasi dokumen yang diperiksa.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body d-flex gap-3">
+              <span class="feature-icon"><i class="bi bi-cpu"></i></span>
+              <div>
+                <h3 class="h6 fw-bold mb-1">Analisis AI/LLM</h3>
+                <p class="small text-secondary mb-2">
+                  Mengirim teks dokumen ke layanan AI/LLM untuk mengidentifikasi indikasi plagiarisme.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body d-flex gap-3">
+              <span class="feature-icon"><i class="bi bi-speedometer2"></i></span>
+              <div>
+                <h3 class="h6 fw-bold mb-1">Klasifikasi Tingkat Indikasi</h3>
+                <p class="small text-secondary mb-2">
+                  Mengelompokkan hasil analisis menjadi tingkat rendah, sedang, atau tinggi.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body d-flex gap-3">
+              <span class="feature-icon"><i class="bi bi-list-check"></i></span>
+              <div>
+                <h3 class="h6 fw-bold mb-1">Hasil &amp; Detail Analisis</h3>
+                <p class="small text-secondary mb-2">
+                  Menampilkan hasil pemeriksaan beserta rincian temuan dan struktur dokumen.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100 shadow-sm">
+            <div class="card-body d-flex gap-3">
+              <span class="feature-icon"><i class="bi bi-clock-history"></i></span>
+              <div>
+                <h3 class="h6 fw-bold mb-1">Riwayat Pemeriksaan</h3>
+                <p class="small text-secondary mb-2">
+                  Menyimpan riwayat pemeriksaan dan membuka kembali hasil analisis sebelumnya.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CARA KERJA ============ -->
+    <section class="mb-5" id="cara-kerja">
+      <div class="mb-4">
+        <h2 class="h4 fw-bold mb-1">Cara Kerja</h2>
+        <p class="text-secondary mb-0">Empat langkah dari unggah dokumen sampai melihat kembali hasilnya.</p>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-md-6 col-lg-3">
+          <div class="step">
+            <span class="step-no">1</span>
+            <div>
+              <div class="step-title">Unggah Dokumen</div>
+              <div class="step-desc">
+                Pilih berkas PDF, DOC, atau DOCX dan lengkapi judul, NIM, serta jenis dokumen.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+          <div class="step">
+            <span class="step-no">2</span>
+            <div>
+              <div class="step-title">Proses Pemeriksaan</div>
+              <div class="step-desc">
+                Sistem memvalidasi berkas, mengekstrak teks, lalu menjalankan analisis AI/LLM.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+          <div class="step">
+            <span class="step-no">3</span>
+            <div>
+              <div class="step-title">Hasil &amp; Detail</div>
+              <div class="step-desc">
+                Lihat tingkat indikasi plagiarisme, rincian sumber, temuan, dan struktur dokumen.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+          <div class="step">
+            <span class="step-no">4</span>
+            <div>
+              <div class="step-title">Riwayat</div>
+              <div class="step-desc">
+                Semua pemeriksaan tersimpan sehingga hasilnya dapat dibuka kembali kapan saja.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TINGKAT INDIKASI ============ -->
+    <section class="mb-5" id="tingkat-indikasi">
+      <div class="row g-4">
+        <div class="col-lg-7">
+          <h2 class="h5 fw-bold mb-3">Klasifikasi Tingkat Indikasi Plagiarisme</h2>
+          <div class="row g-3">
+            <div class="col-sm-4">
+              <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                  <div class="d-flex align-items-center gap-2 mb-2">
+                    <i class="bi bi-check-circle-fill text-success"></i>
+                    <span class="fw-semibold">Rendah</span>
+                  </div>
+                  <div class="small text-secondary">Skor kemiripan kurang dari 20%.</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-sm-4">
+              <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                  <div class="d-flex align-items-center gap-2 mb-2">
+                    <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                    <span class="fw-semibold">Sedang</span>
+                  </div>
+                  <div class="small text-secondary">Skor kemiripan 20% sampai 49%.</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-sm-4">
+              <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                  <div class="d-flex align-items-center gap-2 mb-2">
+                    <i class="bi bi-x-octagon-fill text-danger"></i>
+                    <span class="fw-semibold">Tinggi</span>
+                  </div>
+                  <div class="small text-secondary">Skor kemiripan 50% atau lebih.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p class="small text-secondary mb-0 mt-3">
+            <i class="bi bi-info-circle me-1"></i>
+            SRS mendefinisikan tiga kategori tingkat indikasi <strong>tanpa angka ambang batas</strong>.
+            Angka pada prototipe ini ditetapkan agar klasifikasi dapat didemokan dan perlu dikonfirmasi
+            pada tahap implementasi.
+          </p>
+        </div>
+
+        <div class="col-lg-5">
+          <div class="card shadow-sm border-0 h-100" style="background: linear-gradient(135deg,#eef4ff,#f6fbff);">
+            <div class="card-body">
+              <div class="d-flex gap-2 mb-2">
+                <i class="bi bi-shield-exclamation text-primary fs-5"></i>
+                <h3 class="h6 fw-bold mb-0">Catatan Penggunaan</h3>
+              </div>
+              <ul class="list-unstyled small text-secondary mb-0">
+                <li class="d-flex gap-2 mb-2">
+                  <i class="bi bi-dot"></i>
+                  <span>Hasil pemeriksaan bersifat <strong>indikasi awal</strong>, bukan keputusan akhir
+                  mengenai plagiarisme.</span>
+                </li>
+                <li class="d-flex gap-2 mb-2">
+                  <i class="bi bi-dot"></i>
+                  <span>Analisis memerlukan koneksi internet dan layanan AI/LLM yang tersedia.</span>
+                </li>
+                <li class="d-flex gap-2 mb-2">
+                  <i class="bi bi-dot"></i>
+                  <span>Dokumen hasil pemindaian (gambar) tidak dapat dianalisis karena teksnya tidak
+                  dapat diekstrak.</span>
+                </li>
+                <li class="d-flex gap-2">
+                  <i class="bi bi-dot"></i>
+                  <span>Dokumen proposal dan laporan Tugas Akhir pengguna bersifat rahasia dan hanya
+                  dapat diakses oleh pemiliknya.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-center mt-5">
+      <p class="mb-1">&copy; 2026 &middot; Aplikasi Deteksi Plagiarisme Proposal &amp; Laporan Tugas Akhir Menggunakan AI</p>
+      <p class="mb-0">
+        <a href="login-admin.html" class="text-decoration-none">
+          <i class="bi bi-shield-lock me-1"></i>Masuk sebagai Admin
+        </a>
+      </p>
+    </footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      /* ==================================================================
+       * BERANDA
+       * Menampilkan ringkasan aktivitas lokal dan menyesuaikan navbar
+       * dengan status sesi pengguna. Data pada prototipe ini dibaca dari
+       * localStorage (kunci 'riwayatPemeriksaan'). Saat backend siap,
+       * ganti bagian bertanda [API] dengan pemanggilan API.
+       * ================================================================== */
+
+      var KUNCI_SESI    = 'sesiPengguna';
+      var KUNCI_RIWAYAT = 'riwayatPemeriksaan';
+
+      function bacaJson(storage, kunci, bawaan) {
+        try {
+          var raw = storage.getItem(kunci);
+          return raw ? JSON.parse(raw) : bawaan;
+        } catch (err) {
+          return bawaan;
+        }
+      }
+
+      // ====== Navbar sesuai status sesi ======
+      var sesi = bacaJson(sessionStorage, KUNCI_SESI, null);
+      var navMasuk = document.getElementById('navMasukItem');
+      var navUser  = document.getElementById('navUserItem');
+
+      if (sesi) {
+        navMasuk.classList.add('d-none');
+        navUser.classList.remove('d-none');
+        var navNama = document.getElementById('navNamaPengguna');
+        navNama.textContent = sesi.nama || 'Pengguna';
+        if (sesi.email) navNama.title = sesi.email;
+
+        document.getElementById('navLogout').addEventListener('click', function (e) {
+          e.preventDefault();
+          try { sessionStorage.removeItem(KUNCI_SESI); } catch (err) { /* diabaikan */ }
+          window.location.href = 'login.html';
+        });
+      }
+
+      // ====== Ringkasan aktivitas ======
+      // [API] ganti dengan GET /api/history/summary
+      var daftar = bacaJson(localStorage, KUNCI_RIWAYAT, []);
+      if (!Array.isArray(daftar)) daftar = [];
+
+      var selesai = daftar.filter(function (item) {
+        return item && typeof item.skor === 'number' && isFinite(item.skor);
+      });
+
+      var total = selesai.length;
+      var jumlah = selesai.reduce(function (a, item) { return a + item.skor; }, 0);
+      var rata = total ? Math.round(jumlah / total) : 0;
+      var tinggi = selesai.filter(function (item) { return item.skor >= 50; }).length;
+
+      document.getElementById('statTotal').textContent = String(total);
+      document.getElementById('statRata').textContent = total ? (rata + '%') : '\u2014';
+      document.getElementById('statTinggi').textContent = String(tinggi);
+      document.getElementById('statTotalKet').textContent = total
+        ? 'Tersimpan di perangkat ini dan dapat dibuka dari halaman Riwayat.'
+        : 'Belum ada pemeriksaan pada perangkat ini.';
+    })();
+  </script>
+</body>
+</html>

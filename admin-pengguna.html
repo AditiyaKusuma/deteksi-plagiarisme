@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data Pengguna (Admin) &mdash; Deteksi Plagiarisme</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #0d6efd; --admin: #12275a; }
+
+    body {
+      background:
+        radial-gradient(1100px 420px at 10% -10%, #e7f0ff 0%, transparent 60%),
+        radial-gradient(900px 380px at 100% 0%, #eef7ff 0%, transparent 55%),
+        #f4f6fb;
+      min-height: 100vh;
+    }
+
+    .navbar-brand-icon {
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .18);
+      border-radius: .6rem;
+    }
+    .navbar .badge-admin { font-size: .6rem; letter-spacing: .06em; vertical-align: middle; }
+
+    .card { border: 1px solid rgba(15, 23, 42, .07); border-radius: 1rem; }
+    .card-header { border-radius: 1rem 1rem 0 0 !important; }
+    .min-w-0 { min-width: 0; }
+
+    .stat-tile { border: 1px solid #e5eaf3; border-radius: .75rem; padding: .85rem 1rem; height: 100%; }
+    .stat-tile .tile-label { font-size: .72rem; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; }
+    .stat-tile .tile-value { font-weight: 700; font-size: 1.35rem; line-height: 1.2; }
+
+    .table > :not(caption) > * > * { padding: .85rem .75rem; }
+    .table thead th {
+      font-size: .74rem; text-transform: uppercase; letter-spacing: .04em;
+      color: #6b7280; font-weight: 600; border-bottom-width: 1px;
+    }
+    .row-judul { font-weight: 600; font-size: .925rem; }
+    .row-meta { font-size: .78rem; color: #6b7280; }
+
+    .avatar {
+      width: 38px; height: 38px; flex: 0 0 38px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 50%; background: #eef4ff; color: var(--brand);
+      font-weight: 700; font-size: .85rem;
+    }
+
+    .empty-state { padding: 3rem 1rem; text-align: center; }
+    .empty-state .icon { font-size: 2.6rem; color: #b9c4d6; }
+
+    .detail-row { display: flex; gap: 1rem; padding: .55rem 0; border-bottom: 1px dashed #e8ecf4; }
+    .detail-row:last-child { border-bottom: 0; }
+    .detail-row .k { width: 150px; flex: 0 0 150px; color: #6b7280; font-size: .82rem; }
+    .detail-row .v { font-size: .88rem; font-weight: 500; min-width: 0; word-break: break-word; }
+
+    footer { color: #7c8698; font-size: .82rem; }
+
+    @media print {
+      body { background: #fff; }
+      .no-print { display: none !important; }
+      .card { border-color: #ccc; box-shadow: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============ NAVBAR ADMIN ============ -->
+  <nav class="navbar navbar-expand-lg navbar-dark shadow-sm no-print" style="background:#12275a">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold" href="admin-pengguna.html">
+        <span class="navbar-brand-icon"><i class="bi bi-shield-lock"></i></span>
+        <span>Deteksi Plagiarisme</span>
+        <span class="badge bg-light text-dark badge-admin">ADMIN</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navMain">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
+          <li class="nav-item"><a class="nav-link active" href="admin-pengguna.html"><i class="bi bi-people me-1"></i>Data Pengguna</a></li>
+          <li class="nav-item"><a class="nav-link" href="admin-dokumen.html"><i class="bi bi-folder2-open me-1"></i>Dokumen</a></li>
+          <li class="nav-item"><a class="nav-link" href="admin-riwayat.html"><i class="bi bi-clock-history me-1"></i>Riwayat Pemeriksaan</a></li>
+          <li class="nav-item"><a class="nav-link" href="admin-ai.html"><i class="bi bi-sliders me-1"></i>Pengaturan AI</a></li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+              <i class="bi bi-person-badge me-1"></i><span id="navNamaAdmin">Admin</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="index.html"><i class="bi bi-box-arrow-up-right me-2"></i>Buka Aplikasi Pengguna</a></li>
+              <li><a class="dropdown-item" href="login.html"><i class="bi bi-person me-2"></i>Masuk sebagai Pengguna</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item text-danger" href="#" id="navLogout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4 py-lg-5">
+
+    <!-- ============ HEADING ============ -->
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+      <div>
+        <h1 class="h4 fw-bold mb-1">Data Pengguna</h1>
+        <p class="text-secondary mb-0">
+          Daftar akun pengguna yang terdaftar pada sistem beserta ringkasan aktivitasnya.
+        </p>
+      </div>
+    </div>
+
+    <!-- ============ RINGKASAN ============ -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-lg-3">
+        <div class="stat-tile">
+          <div class="tile-label">Total Pengguna</div>
+          <div class="tile-value" id="statPengguna">0</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="stat-tile">
+          <div class="tile-label">Total Dokumen</div>
+          <div class="tile-value" id="statDokumen">0</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="stat-tile">
+          <div class="tile-label">Total Pemeriksaan</div>
+          <div class="tile-value" id="statPemeriksaan">0</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="stat-tile">
+          <div class="tile-label">Rata-rata Kemiripan</div>
+          <div class="tile-value" id="statRata">&mdash;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ PERINGATAN DATA CONTOH ============ -->
+    <div class="alert alert-warning border d-none align-items-center gap-2 py-2 small" id="alertContoh" role="alert">
+      <i class="bi bi-info-circle me-1"></i>
+      Belum ada akun pengguna yang tersimpan pada perangkat ini, sehingga tabel menampilkan
+      <strong>data contoh</strong> untuk keperluan demonstrasi.
+    </div>
+
+    <!-- ============ DAFTAR PENGGUNA ============ -->
+    <div class="card shadow-sm">
+      <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h2 class="h6 fw-bold mb-0"><i class="bi bi-people text-primary me-2"></i>Daftar Pengguna</h2>
+
+        <div class="d-flex flex-wrap align-items-center gap-2 no-print">
+          <div class="input-group input-group-sm" style="width: 230px">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="search" class="form-control" id="cari" placeholder="Cari nama, NIM, atau email">
+          </div>
+
+          <select class="form-select form-select-sm" id="urutkan" style="width: auto" aria-label="Urutkan">
+            <option value="nama">Urutkan: Nama (A-Z)</option>
+            <option value="nama-desc">Nama (Z-A)</option>
+            <option value="dokumen">Dokumen Terbanyak</option>
+            <option value="pemeriksaan">Pemeriksaan Terbanyak</option>
+            <option value="terbaru">Terakhir Diperiksa</option>
+          </select>
+
+          <select class="form-select form-select-sm" id="modeDemo" style="width: auto"
+                  aria-label="Simulasi kondisi data" title="Alat bantu demo">
+            <option value="normal">Data normal</option>
+            <option value="kosong">Data kosong</option>
+            <option value="gagal">Gagal mengambil data</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card-body p-0">
+        <!-- Kondisi gagal mengambil data (exception UC-10 no. 2) -->
+        <div class="alert alert-danger m-3 d-none" id="alertGagal" role="alert">
+          <div class="d-flex gap-2">
+            <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+            <div>
+              <div class="fw-semibold">Data pengguna gagal diambil</div>
+              <div class="small mb-2">
+                Sistem tidak dapat mengambil data pengguna. Periksa koneksi ke basis data lalu muat ulang halaman.
+              </div>
+              <button type="button" class="btn btn-sm btn-danger" id="btnMuatUlang">
+                <i class="bi bi-arrow-clockwise me-1"></i>Muat Ulang
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Kondisi data kosong (exception UC-10 no. 1) -->
+        <div class="empty-state d-none" id="stateKosong">
+          <div class="icon mb-2"><i class="bi bi-people"></i></div>
+          <div class="fw-semibold mb-1">Data pengguna belum tersedia</div>
+          <p class="text-secondary small mb-0">
+            Belum ada pengguna yang terdaftar atau datanya belum dapat ditampilkan.
+          </p>
+        </div>
+
+        <!-- Kondisi normal -->
+        <div class="table-responsive" id="wrapTabel">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th class="ps-3">Pengguna</th>
+                <th>NIM</th>
+                <th>Email</th>
+                <th class="text-center">Dokumen</th>
+                <th class="text-center">Pemeriksaan</th>
+                <th>Terakhir Diperiksa</th>
+                <th class="text-end pe-3 no-print">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="isiTabel"></tbody>
+          </table>
+
+          <div class="empty-state d-none" id="statePencarian">
+            <div class="icon mb-2"><i class="bi bi-search"></i></div>
+            <div class="fw-semibold mb-1">Pengguna tidak ditemukan</div>
+            <p class="text-secondary small mb-0">Tidak ada pengguna yang cocok dengan kata kunci pencarian.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-footer bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span class="small text-secondary" id="infoJumlah">Menampilkan 0 pengguna.</span>
+        <span class="small text-secondary no-print">
+          <i class="bi bi-hdd-network me-1"></i>Sumber data: <span id="infoSumber">&mdash;</span>
+        </span>
+      </div>
+    </div>
+
+    <footer class="text-center mt-5">
+      <p class="mb-0">&copy; 2026 &middot; Aplikasi Deteksi Plagiarisme Proposal &amp; Laporan Tugas Akhir Menggunakan AI</p>
+    </footer>
+  </main>
+
+  <!-- ============ MODAL DETAIL PENGGUNA ============ -->
+  <div class="modal fade" id="modalDetail" tabindex="-1" aria-labelledby="modalDetailLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h6 fw-bold" id="modalDetailLabel">
+            <i class="bi bi-person-vcard text-primary me-2"></i>Informasi Pengguna
+          </h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+        </div>
+        <div class="modal-body" id="modalDetailIsi"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+          <a href="admin-dokumen.html" class="btn btn-primary btn-sm" id="btnKeDokumen">
+            <i class="bi bi-folder2-open me-1"></i>Lihat Dokumen Pengguna
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      /* ==================================================================
+       * UC-10 MELIHAT DATA PENGGUNA (ADMIN)
+       *
+       * Flow of Activities:
+       *   1. Admin memilih menu Data Pengguna.
+       *   2. Sistem mengambil data pengguna.
+       *   3. Sistem menampilkan daftar pengguna.
+       *   4. Admin memilih data pengguna yang ingin dilihat.
+       *   5. Sistem menampilkan informasi pengguna.
+       *
+       * Exception:
+       *   1. Tidak ada data pengguna -> tampilkan informasi data belum tersedia.
+       *   2. Data gagal diambil      -> tampilkan pesan kesalahan.
+       *
+       * Data pada prototipe ini dibaca dari localStorage:
+       *   'akunTerdaftar'      (D1 Data Pengguna)
+       *   'riwayatPemeriksaan' (D3 Hasil Pemeriksaan)
+       *   'permintaanPemeriksaan' (dokumen yang belum selesai diperiksa)
+       * [API] ganti bacaData() dengan GET /api/admin/users
+       * ================================================================== */
+
+      var KUNCI_SESI_ADMIN  = 'sesiAdmin';
+      var KUNCI_AKUN        = 'akunTerdaftar';
+      var KUNCI_RIWAYAT     = 'riwayatPemeriksaan';
+      var KUNCI_PERMINTAAN  = 'permintaanPemeriksaan';
+
+      // Guard admin. Set false bila ingin halaman bisa dibuka tanpa autentikasi Admin.
+      var WAJIB_LOGIN_ADMIN = true;
+
+      /* ---------------- Util ---------------- */
+      function esc(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      function bacaJson(storage, kunci, bawaan) {
+        try {
+          var raw = storage.getItem(kunci);
+          return raw ? JSON.parse(raw) : bawaan;
+        } catch (err) {
+          return bawaan;
+        }
+      }
+
+      function storageTersedia(storage) {
+        try {
+          storage.setItem('__uji', '1');
+          storage.removeItem('__uji');
+          return true;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function inisial(nama) {
+        var kata = String(nama || '?').trim().split(/\s+/);
+        var a = kata[0] ? kata[0].charAt(0) : '?';
+        var b = kata.length > 1 ? kata[kata.length - 1].charAt(0) : '';
+        return (a + b).toUpperCase();
+      }
+
+      function tanggalRingkas(iso) {
+        try {
+          var d = new Date(iso);
+          if (isNaN(d.getTime())) return '\u2014';
+          return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) +
+                 ', ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        } catch (err) {
+          return '\u2014';
+        }
+      }
+
+      /* ---------------- Sesi admin & guard ---------------- */
+      var sesi = bacaJson(sessionStorage, KUNCI_SESI_ADMIN, null);
+
+      if (WAJIB_LOGIN_ADMIN && !sesi && storageTersedia(sessionStorage)) {
+        window.location.replace('login-admin.html?next=admin-pengguna.html');
+        return;
+      }
+
+      var navNama = document.getElementById('navNamaAdmin');
+      navNama.textContent = (sesi && sesi.nama) ? sesi.nama : 'Admin';
+      if (sesi && sesi.email) navNama.title = sesi.email + ' \u00b7 ' + (sesi.peran || 'Administrator');
+
+      document.getElementById('navLogout').addEventListener('click', function (e) {
+        e.preventDefault();
+        try { sessionStorage.removeItem(KUNCI_SESI_ADMIN); } catch (err) { /* diabaikan */ }
+        window.location.href = 'login-admin.html';
+      });
+
+      /* ---------------- Data contoh (fallback demo) ---------------- */
+      var PENGGUNA_DEMO = [
+        { nama: 'Aditiya Kusuma',  nim: '11241002', email: 'aditiya@example.com',  dibuat: '2026-09-20T09:15:00+08:00', status: 'Aktif' },
+        { nama: 'Rania Pramesti',  nim: '11241015', email: 'rania@example.com',    dibuat: '2026-09-21T10:40:00+08:00', status: 'Aktif' },
+        { nama: 'Bagas Nugraha',   nim: '11241027', email: 'bagas@example.com',    dibuat: '2026-09-22T13:05:00+08:00', status: 'Aktif' }
+      ];
+
+      /* ---------------- Pengambilan data ---------------- */
+      // Exception 2: kegagalan pengambilan data disimulasikan lewat mode demo.
+      function bacaData(mode) {
+        if (mode === 'gagal') {
+          return { ok: false, pengguna: [], dokumen: [], pemeriksaan: [], contoh: false };
+        }
+
+        var terdaftar = bacaJson(localStorage, KUNCI_AKUN, []);
+        if (!Array.isArray(terdaftar)) terdaftar = [];
+
+        var adaAkunNyata = terdaftar.length > 0;
+
+        // Akun: akun bawaan + akun hasil pendaftaran (email unik).
+        var pengguna = adaAkunNyata ? terdaftar.slice() : PENGGUNA_DEMO.slice();
+        pengguna = pengguna.map(function (p) {
+          return {
+            nama: p.nama || '\u2014',
+            nim: String(p.nim || ''),
+            email: String(p.email || '').toLowerCase(),
+            dibuat: p.dibuat || p.membuat || null,
+            status: 'Aktif'
+          };
+        });
+
+        // Dokumen: diambil dari riwayat pemeriksaan + permintaan yang belum selesai.
+        var riwayat = bacaJson(localStorage, KUNCI_RIWAYAT, []);
+        if (!Array.isArray(riwayat)) riwayat = [];
+        riwayat = riwayat.filter(function (i) {
+          return i && i.dokumen && typeof i.skor === 'number' && isFinite(i.skor);
+        });
+
+        var permintaan = bacaJson(sessionStorage, KUNCI_PERMINTAAN, null);
+        var dokumen = riwayat.map(function (i) {
+          return { nim: String(i.dokumen.nim || ''), judul: i.dokumen.judul, diperiksa: true, arsip: i.arsip };
+        });
+        if (permintaan && permintaan.nim) {
+          dokumen.push({ nim: String(permintaan.nim), judul: permintaan.judul, diperiksa: false, arsip: permintaan.diajukan || null });
+        }
+
+        var contoh = false;
+        if (!adaAkunNyata && !riwayat.length) {
+          contoh = true;
+          dokumen = [
+            { nim: '11241002', judul: 'Sistem Informasi Monitoring Skripsi Berbasis Web', diperiksa: true,  arsip: '2026-10-01T08:20:00+08:00' },
+            { nim: '11241002', judul: 'Laporan Tugas Akhir: Sistem Informasi Monitoring Skripsi', diperiksa: true, arsip: '2026-10-12T14:05:00+08:00' },
+            { nim: '11241015', judul: 'Penerapan Metode SAW pada Sistem Pendukung Keputusan', diperiksa: true, arsip: '2026-10-05T11:30:00+08:00' },
+            { nim: '11241027', judul: 'Aplikasi Monitoring Kinerja Karyawan Berbasis Web', diperiksa: false, arsip: '2026-10-15T09:45:00+08:00' }
+          ];
+        }
+
+        return { ok: true, pengguna: pengguna, dokumen: dokumen, pemeriksaan: riwayat, contoh: contoh };
+      }
+
+      /* ---------------- Elemen ---------------- */
+      var isiTabel       = document.getElementById('isiTabel');
+      var wrapTabel      = document.getElementById('wrapTabel');
+      var stateKosong    = document.getElementById('stateKosong');
+      var statePencarian = document.getElementById('statePencarian');
+      var alertGagal     = document.getElementById('alertGagal');
+      var alertContoh    = document.getElementById('alertContoh');
+      var inputCari      = document.getElementById('cari');
+      var selectUrut     = document.getElementById('urutkan');
+      var selectMode     = document.getElementById('modeDemo');
+      var infoJumlah     = document.getElementById('infoJumlah');
+      var infoSumber     = document.getElementById('infoSumber');
+      var modalDetail    = null;
+
+      function modal() {
+        if (!modalDetail) modalDetail = new bootstrap.Modal(document.getElementById('modalDetail'));
+        return modalDetail;
+      }
+
+      /* ---------------- Render ---------------- */
+      var dataSekarang = { pengguna: [], dokumen: [] };
+
+      function gabungData(mode) {
+        var data = bacaData(mode);
+        dataSekarang = data;
+        if (!data.ok) return data;
+
+        // Lengkapi tiap pengguna dengan jumlah dokumen, jumlah pemeriksaan, waktu terakhir.
+        data.pengguna = data.pengguna.map(function (p) {
+          var dok = data.dokumen.filter(function (d) { return d.nim === p.nim; });
+          var periksa = data.pemeriksaan.filter(function (i) { return String(i.dokumen.nim || '') === p.nim; });
+
+          var terakhir = null;
+          periksa.forEach(function (i) {
+            var t = new Date(i.arsip || 0).getTime();
+            if (!isNaN(t) && (terakhir === null || t > terakhir)) terakhir = t;
+          });
+          dok.forEach(function (d) {
+            var t = new Date(d.arsip || 0).getTime();
+            if (!isNaN(t) && (terakhir === null || t > terakhir)) terakhir = t;
+          });
+
+          var jumlah = periksa.reduce(function (a, i) { return a + i.skor; }, 0);
+          return {
+            nama: p.nama,
+            nim: p.nim,
+            email: p.email,
+            status: p.status,
+            dibuat: p.dibuat,
+            jumlahDokumen: dok.length,
+            jumlahPeriksa: periksa.length,
+            rataSkor: periksa.length ? Math.round(jumlah / periksa.length) : null,
+            terakhir: terakhir
+          };
+        });
+
+        return data;
+      }
+
+      function render() {
+        var mode = selectMode.value;
+        var data = gabungData(mode);
+
+        alertGagal.classList.add('d-none');
+        wrapTabel.classList.add('d-none');
+        stateKosong.classList.add('d-none');
+        statePencarian.classList.add('d-none');
+        alertContoh.classList.add('d-none');
+        alertContoh.classList.remove('d-flex');
+
+        // Exception 2: gagal mengambil data.
+        if (!data.ok) {
+          alertGagal.classList.remove('d-none');
+          infoJumlah.textContent = 'Data pengguna tidak dapat ditampilkan.';
+          infoSumber.textContent = 'gagal dimuat';
+          hitungStatistik([], []);
+          return;
+        }
+
+        if (data.contoh) {
+          alertContoh.classList.remove('d-none');
+          alertContoh.classList.add('d-flex');
+        }
+
+        // Exception 1 / mode demo: tidak ada data pengguna.
+        if (mode === 'kosong' || !data.pengguna.length) {
+          stateKosong.classList.remove('d-none');
+          infoJumlah.textContent = 'Data pengguna belum tersedia.';
+          infoSumber.textContent = data.contoh ? 'data contoh' : 'penyimpanan lokal';
+          hitungStatistik([], []);
+          return;
+        }
+
+        hitungStatistik(data.pengguna, data.dokumen);
+
+        var cari = inputCari.value.trim().toLowerCase();
+        var daftar = data.pengguna.filter(function (p) {
+          if (!cari) return true;
+          return (p.nama + ' ' + p.nim + ' ' + p.email).toLowerCase().indexOf(cari) !== -1;
+        });
+
+        var modeUrut = selectUrut.value;
+        daftar.sort(function (a, b) {
+          if (modeUrut === 'nama-desc') return b.nama.localeCompare(a.nama, 'id');
+          if (modeUrut === 'dokumen') return b.jumlahDokumen - a.jumlahDokumen || a.nama.localeCompare(b.nama, 'id');
+          if (modeUrut === 'pemeriksaan') return b.jumlahPeriksa - a.jumlahPeriksa || a.nama.localeCompare(b.nama, 'id');
+          if (modeUrut === 'terbaru') return (b.terakhir || 0) - (a.terakhir || 0);
+          return a.nama.localeCompare(b.nama, 'id');
+        });
+
+        wrapTabel.classList.remove('d-none');
+
+        if (!daftar.length) {
+          statePencarian.classList.remove('d-none');
+          infoJumlah.textContent = 'Tidak ada pengguna yang cocok dengan pencarian.';
+          infoSumber.textContent = data.contoh ? 'data contoh' : 'penyimpanan lokal';
+          return;
+        }
+
+        isiTabel.innerHTML = daftar.map(function (p) {
+          return '<tr>' +
+            '<td class="ps-3">' +
+              '<div class="d-flex align-items-center gap-2">' +
+                '<span class="avatar">' + esc(inisial(p.nama)) + '</span>' +
+                '<div class="min-w-0">' +
+                  '<div class="row-judul text-truncate">' + esc(p.nama) + '</div>' +
+                  '<div class="row-meta">Terdaftar ' + esc(p.dibuat ? tanggalRingkas(p.dibuat).split(',')[0] : '\u2014') + '</div>' +
+                '</div>' +
+              '</div>' +
+            '</td>' +
+            '<td>' + (p.nim ? esc(p.nim) : '<span class="text-secondary">\u2014</span>') + '</td>' +
+            '<td class="min-w-0"><span class="row-meta">' + esc(p.email || '\u2014') + '</span></td>' +
+            '<td class="text-center">' + p.jumlahDokumen + '</td>' +
+            '<td class="text-center">' + p.jumlahPeriksa + '</td>' +
+            '<td>' + (p.terakhir ? '<span class="row-meta">' + esc(tanggalRingkas(new Date(p.terakhir).toISOString())) + '</span>'
+                                  : '<span class="text-secondary">Belum diperiksa</span>') + '</td>' +
+            '<td class="text-end pe-3 no-print">' +
+              '<button type="button" class="btn btn-sm btn-outline-primary" data-detail="' + esc(p.email) + '">' +
+                '<i class="bi bi-eye me-1"></i>Detail' +
+              '</button>' +
+            '</td>' +
+          '</tr>';
+        }).join('');
+
+        infoJumlah.textContent = 'Menampilkan ' + daftar.length + ' dari ' + data.pengguna.length + ' pengguna.';
+        infoSumber.textContent = data.contoh ? 'data contoh' : 'penyimpanan lokal';
+      }
+
+      function hitungStatistik(pengguna, dokumen) {
+        document.getElementById('statPengguna').textContent = String(pengguna.length);
+        document.getElementById('statDokumen').textContent = String(dokumen.length);
+
+        var riwayat = (dataSekarang.pemeriksaan || []);
+        document.getElementById('statPemeriksaan').textContent = String(riwayat.length);
+
+        var jumlah = riwayat.reduce(function (a, i) { return a + i.skor; }, 0);
+        document.getElementById('statRata').textContent = riwayat.length ? (Math.round(jumlah / riwayat.length) + '%') : '\u2014';
+      }
+
+      /* ---------------- Detail pengguna (langkah 4-5) ---------------- */
+      function bukaDetail(email) {
+        var p = dataSekarang.pengguna.filter(function (x) { return x.email === email; })[0];
+        if (!p) return;
+
+        var dok = (dataSekarang.dokumen || []).filter(function (d) { return d.nim === p.nim; });
+        var periksa = (dataSekarang.pemeriksaan || []).filter(function (i) { return String(i.dokumen.nim || '') === p.nim; });
+
+        var barisDokumen = dok.length
+          ? dok.map(function (d) {
+              return '<li class="d-flex justify-content-between align-items-start gap-3 py-2 border-bottom">' +
+                       '<span class="min-w-0">' +
+                         '<span class="d-block row-judul text-truncate">' + esc(d.judul) + '</span>' +
+                         '<span class="row-meta">' + esc(d.arsip ? tanggalRingkas(d.arsip) : '\u2014') + '</span>' +
+                       '</span>' +
+                       '<span class="badge ' + (d.diperiksa ? 'bg-success-subtle text-success-emphasis border border-success' : 'bg-secondary-subtle text-secondary-emphasis border') + '">' +
+                         (d.diperiksa ? 'Sudah diperiksa' : 'Belum diperiksa') +
+                       '</span>' +
+                     '</li>';
+            }).join('')
+          : '<li class="text-secondary small py-2">Pengguna ini belum mengunggah dokumen.</li>';
+
+        var badgeTingkat = '';
+        if (p.rataSkor !== null) {
+          var kelas = p.rataSkor >= 50 ? 'bg-danger-subtle text-danger-emphasis border border-danger'
+                    : p.rataSkor >= 20 ? 'bg-warning-subtle text-warning-emphasis border border-warning'
+                    : 'bg-success-subtle text-success-emphasis border border-success';
+          badgeTingkat = '<span class="badge ' + kelas + '">Rata-rata kemiripan ' + p.rataSkor + '%</span>';
+        }
+
+        document.getElementById('modalDetailIsi').innerHTML =
+          '<div class="d-flex align-items-center gap-3 mb-3">' +
+            '<span class="avatar" style="width:52px;height:52px;flex:0 0 52px;font-size:1.1rem">' + esc(inisial(p.nama)) + '</span>' +
+            '<div class="min-w-0">' +
+              '<div class="fw-bold">' + esc(p.nama) + '</div>' +
+              '<div class="row-meta">' + esc(p.email || '\u2014') + '</div>' +
+            '</div>' +
+          '</div>' +
+
+          '<div class="mb-4">' +
+            '<div class="detail-row"><span class="k">Nama Lengkap</span><span class="v">' + esc(p.nama) + '</span></div>' +
+            '<div class="detail-row"><span class="k">NIM</span><span class="v">' + (p.nim ? esc(p.nim) : '\u2014') + '</span></div>' +
+            '<div class="detail-row"><span class="k">Email</span><span class="v">' + esc(p.email || '\u2014') + '</span></div>' +
+            '<div class="detail-row"><span class="k">Status Akun</span><span class="v">' +
+              '<span class="badge bg-success-subtle text-success-emphasis border border-success">' + esc(p.status) + '</span></span></div>' +
+            '<div class="detail-row"><span class="k">Terdaftar Sejak</span><span class="v">' +
+              esc(p.dibuat ? tanggalRingkas(p.dibuat) : '\u2014') + '</span></div>' +
+            '<div class="detail-row"><span class="k">Jumlah Dokumen</span><span class="v">' + p.jumlahDokumen + ' dokumen</span></div>' +
+            '<div class="detail-row"><span class="k">Jumlah Pemeriksaan</span><span class="v">' + p.jumlahPeriksa + ' kali</span></div>' +
+            '<div class="detail-row"><span class="k">Ringkasan Hasil</span><span class="v">' +
+              (badgeTingkat || '<span class="text-secondary">Belum ada pemeriksaan</span>') + '</span></div>' +
+          '</div>' +
+
+          '<h3 class="h6 fw-bold mb-2"><i class="bi bi-folder2-open text-primary me-2"></i>Dokumen Pengguna</h3>' +
+          '<ul class="list-unstyled mb-0">' + barisDokumen + '</ul>';
+
+        document.getElementById('btnKeDokumen').setAttribute('href', 'admin-dokumen.html?nim=' + encodeURIComponent(p.nim));
+        modal().show();
+      }
+
+      /* ---------------- Event ---------------- */
+      isiTabel.addEventListener('click', function (e) {
+        var tombol = e.target.closest ? e.target.closest('[data-detail]') : null;
+        if (tombol) bukaDetail(tombol.getAttribute('data-detail'));
+      });
+
+      inputCari.addEventListener('input', render);
+      selectUrut.addEventListener('change', render);
+      selectMode.addEventListener('change', render);
+      document.getElementById('btnMuatUlang').addEventListener('click', function () {
+        selectMode.value = 'normal';
+        render();
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>

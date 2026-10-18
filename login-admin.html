@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Masuk Admin &mdash; Deteksi Plagiarisme</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #0d6efd; --admin: #12275a; }
+
+    body {
+      background:
+        radial-gradient(1100px 420px at 10% -10%, #e7f0ff 0%, transparent 60%),
+        radial-gradient(900px 380px at 100% 0%, #eafaf3 0%, transparent 55%),
+        #f4f6fb;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+    }
+
+    .navbar-brand-icon {
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .18);
+      border-radius: .6rem;
+    }
+
+    .card { border: 1px solid rgba(15, 23, 42, .07); border-radius: 1rem; }
+
+    /* ---------- Panel kiri (tema admin) ---------- */
+    .auth-side {
+      background: linear-gradient(160deg, #12275a 0%, #0d1e46 55%, #08152f 100%);
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+    .auth-side::after {
+      content: "";
+      position: absolute; inset: 0;
+      background: radial-gradient(420px 220px at 100% 0%, rgba(255, 255, 255, .14), transparent 70%);
+      pointer-events: none;
+    }
+    .auth-side .side-list { list-style: none; padding: 0; margin: 0; }
+    .auth-side .side-list li { display: flex; gap: .6rem; align-items: flex-start; margin-bottom: .85rem; }
+    .auth-side .side-list i { margin-top: .15rem; }
+    .auth-side small { color: rgba(255, 255, 255, .74); }
+
+    .admin-tag {
+      display: inline-flex; align-items: center; gap: .35rem;
+      background: rgba(255, 255, 255, .14);
+      border: 1px solid rgba(255, 255, 255, .22);
+      border-radius: 999px;
+      padding: .2rem .6rem;
+      font-size: .72rem; font-weight: 600;
+    }
+
+    .form-label { font-size: .9rem; }
+    .password-toggle { border-color: #dee2e6; color: #6b7280; }
+    .btn-admin { background: var(--admin); border-color: var(--admin); }
+    .btn-admin:hover, .btn-admin:focus { background: #0d1e46; border-color: #0d1e46; }
+
+    footer { color: #7c8698; font-size: .82rem; }
+  </style>
+</head>
+<body>
+
+  <main class="container py-4 py-lg-5">
+    <div class="row justify-content-center">
+      <div class="col-lg-9 col-xl-8">
+
+        <div class="card shadow-sm overflow-hidden">
+          <div class="row g-0">
+
+            <!-- ============ PANEL INFORMASI ============ -->
+            <div class="col-md-5 auth-side p-4 p-lg-5 d-flex flex-column">
+              <div class="d-flex align-items-center gap-2 fw-semibold mb-4">
+                <span class="navbar-brand-icon"><i class="bi bi-shield-lock"></i></span>
+                <span>Deteksi Plagiarisme</span>
+              </div>
+
+              <span class="admin-tag mb-3"><i class="bi bi-person-badge"></i>Area Admin</span>
+
+              <h1 class="h5 fw-bold mb-3">Masuk untuk mengelola data dan layanan sistem</h1>
+
+              <ul class="side-list small">
+                <li><i class="bi bi-people"></i><span>Melihat data pengguna yang terdaftar pada sistem.</span></li>
+                <li><i class="bi bi-folder2-open"></i><span>Melihat dokumen proposal dan laporan Tugas Akhir yang diunggah.</span></li>
+                <li><i class="bi bi-clock-history"></i><span>Memantau riwayat dan hasil pemeriksaan seluruh pengguna.</span></li>
+                <li><i class="bi bi-sliders"></i><span>Mengatur konfigurasi layanan AI/LLM yang digunakan sistem.</span></li>
+              </ul>
+
+              <div class="mt-auto pt-4">
+                <small>
+                  <i class="bi bi-lock me-1"></i>
+                  Halaman ini khusus untuk Admin. Akses dibatasi berdasarkan hak akses pengguna.
+                </small>
+              </div>
+            </div>
+
+            <!-- ============ FORM ============ -->
+            <div class="col-md-7 bg-white">
+              <div class="p-4 p-lg-5">
+
+                <h2 class="h6 fw-bold mb-1">Autentikasi Admin</h2>
+                <p class="text-secondary small mb-4">
+                  Masukkan data akun Admin untuk mengakses halaman pengelolaan.
+                </p>
+
+                <div id="authAlert" class="alert d-none py-2 small" role="alert"></div>
+
+                <form id="formAdmin" novalidate>
+
+                  <div class="mb-3">
+                    <label for="adminEmail" class="form-label fw-semibold">Email Admin</label>
+                    <div class="input-group has-validation">
+                      <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                      <input type="email" class="form-control" id="adminEmail" name="adminEmail"
+                             placeholder="admin@kampus.ac.id" autocomplete="username" required>
+                      <div class="invalid-feedback">Format email tidak valid.</div>
+                    </div>
+                  </div>
+
+                  <div class="mb-4">
+                    <label for="adminPassword" class="form-label fw-semibold">Password</label>
+                    <div class="input-group has-validation">
+                      <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                      <input type="password" class="form-control" id="adminPassword" name="adminPassword"
+                             placeholder="Minimal 8 karakter" autocomplete="current-password"
+                             minlength="8" required>
+                      <button class="btn password-toggle toggle-pass" type="button"
+                              data-target="adminPassword" title="Tampilkan password">
+                        <i class="bi bi-eye"></i>
+                      </button>
+                      <div class="invalid-feedback">Password wajib diisi (minimal 8 karakter).</div>
+                    </div>
+                  </div>
+
+                  <div class="form-check mb-4">
+                    <input class="form-check-input" type="checkbox" id="ingatAdmin">
+                    <label class="form-check-label small" for="ingatAdmin">
+                      Tampilkan email saya pada perangkat ini
+                    </label>
+                  </div>
+
+                  <button type="submit" class="btn btn-admin text-white w-100 py-2" id="btnMasukAdmin">
+                    <i class="bi bi-box-arrow-in-right me-2"></i>Masuk sebagai Admin
+                  </button>
+                </form>
+
+                <div class="alert alert-light border small text-secondary mt-4 mb-0">
+                  <i class="bi bi-key me-1"></i>
+                  Akun demo: <code>admin@example.com</code> &middot; password <code>admin123</code>
+                  <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="btnIsiDemo">
+                    Isi otomatis
+                  </button>
+                </div>
+
+                <hr class="my-4">
+
+                <div class="d-flex flex-wrap justify-content-between gap-2 small">
+                  <a href="login.html" class="text-decoration-none">
+                    <i class="bi bi-arrow-left me-1"></i>Masuk sebagai Pengguna
+                  </a>
+                  <a href="index.html" class="text-decoration-none">
+                    <i class="bi bi-house-door me-1"></i>Kembali ke Beranda
+                  </a>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <footer class="text-center mt-4">
+          <p class="mb-0">&copy; 2026 &middot; Aplikasi Deteksi Plagiarisme Proposal &amp; Laporan Tugas Akhir Menggunakan AI</p>
+        </footer>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      /* ==================================================================
+       * UC-09 MELAKUKAN AUTENTIKASI AKUN (ADMIN)
+       *
+       * Precondition SRS: "Akun Admin telah tersedia" -- karena itu tidak
+       * ada fitur pendaftaran Admin. Daftar akun Admin pada prototipe ini
+       * dibaca dari localStorage 'akunAdmin' dan digabung dengan akun
+       * bawaan di bawah.
+       *
+       * [API] Saat backend siap, ganti dengan POST /api/auth/admin/login
+       *       { email, password }
+       * ================================================================== */
+
+      var KUNCI_AKUN_ADMIN = 'akunAdmin';
+      var KUNCI_SESI_ADMIN = 'sesiAdmin';
+      var KUNCI_INGAT      = 'emailAdminTerakhir';
+      var RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+      // Akun Admin bawaan (precondition UC-09: akun telah tersedia).
+      var AKUN_ADMIN_BAWAAN = [
+        {
+          nama: 'Administrator Sistem',
+          email: 'admin@example.com',
+          password: 'admin123',
+          peran: 'Administrator'
+        }
+      ];
+
+      // Halaman Admin yang boleh dituju setelah autentikasi.
+      var HALAMAN_ADMIN = ['admin-pengguna.html', 'admin-dokumen.html', 'admin-riwayat.html', 'admin-ai.html'];
+
+      // ====== util ======
+      function bacaJson(storage, kunci, bawaan) {
+        try {
+          var raw = storage.getItem(kunci);
+          return raw ? JSON.parse(raw) : bawaan;
+        } catch (err) {
+          return bawaan;
+        }
+      }
+
+      function tulisJson(storage, kunci, nilai) {
+        try {
+          storage.setItem(kunci, JSON.stringify(nilai));
+          return true;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function daftarAdmin() {
+        var tambahan = bacaJson(localStorage, KUNCI_AKUN_ADMIN, []);
+        if (!Array.isArray(tambahan)) tambahan = [];
+        return AKUN_ADMIN_BAWAAN.concat(tambahan);
+      }
+
+      function tujuanSetelahMasuk() {
+        var next = null;
+        try {
+          next = new URLSearchParams(window.location.search).get('next');
+        } catch (err) {
+          next = null;
+        }
+        return HALAMAN_ADMIN.indexOf(next) !== -1 ? next : 'admin-pengguna.html';
+      }
+
+      function tampilkanAlert(pesan, jenis) {
+        alertBox.className = 'alert alert-' + jenis + ' py-2 small';
+        alertBox.innerHTML = pesan;
+        alertBox.classList.remove('d-none');
+      }
+
+      function sembunyikanAlert() {
+        alertBox.classList.add('d-none');
+      }
+
+      // ====== elemen ======
+      var alertBox   = document.getElementById('authAlert');
+      var formAdmin  = document.getElementById('formAdmin');
+      var btnMasuk   = document.getElementById('btnMasukAdmin');
+      var inputEmail = document.getElementById('adminEmail');
+      var inputPass  = document.getElementById('adminPassword');
+      var ingatEmail = document.getElementById('ingatAdmin');
+
+      // Email terakhir yang diingat (hanya di perangkat ini).
+      var emailTerakhir = null;
+      try { emailTerakhir = localStorage.getItem(KUNCI_INGAT); } catch (err) { emailTerakhir = null; }
+      if (emailTerakhir) {
+        inputEmail.value = emailTerakhir;
+        ingatEmail.checked = true;
+      }
+
+      // ====== tombol lihat password ======
+      Array.prototype.forEach.call(document.querySelectorAll('.toggle-pass'), function (btn) {
+        btn.addEventListener('click', function () {
+          var input = document.getElementById(btn.getAttribute('data-target'));
+          if (!input) return;
+          var tampil = input.type === 'password';
+          input.type = tampil ? 'text' : 'password';
+          btn.querySelector('i').className = tampil ? 'bi bi-eye-slash' : 'bi bi-eye';
+          btn.setAttribute('title', tampil ? 'Sembunyikan password' : 'Tampilkan password');
+        });
+      });
+
+      // ====== isi kredensial demo ======
+      document.getElementById('btnIsiDemo').addEventListener('click', function () {
+        inputEmail.value = AKUN_ADMIN_BAWAAN[0].email;
+        inputPass.value = AKUN_ADMIN_BAWAAN[0].password;
+        sembunyikanAlert();
+        inputEmail.focus();
+      });
+
+      // ====== autentikasi (UC-09) ======
+      formAdmin.addEventListener('submit', function (e) {
+        e.preventDefault();
+        sembunyikanAlert();
+
+        if (!RE_EMAIL.test(inputEmail.value.trim())) {
+          inputEmail.setCustomValidity('Format email tidak valid.');
+        } else {
+          inputEmail.setCustomValidity('');
+        }
+
+        formAdmin.classList.add('was-validated');
+        if (!formAdmin.checkValidity()) {
+          tampilkanAlert('Periksa kembali data yang kamu masukkan.', 'danger');
+          return;
+        }
+
+        var email = inputEmail.value.trim().toLowerCase();
+        var sandi = inputPass.value;
+
+        // [API] ganti blok pencocokan lokal ini dengan POST /api/auth/admin/login
+        var admin = daftarAdmin().filter(function (a) {
+          return String(a.email).toLowerCase() === email;
+        })[0];
+
+        // Exception 2: akun Admin tidak ditemukan.
+        if (!admin) {
+          tampilkanAlert('<i class="bi bi-person-x me-1"></i>Akun Admin tidak ditemukan. ' +
+                         'Periksa kembali data akun yang dimasukkan.', 'danger');
+          inputEmail.select();
+          return;
+        }
+
+        // Exception 1: data akun tidak sesuai -> akses ditolak.
+        if (admin.password !== sandi) {
+          tampilkanAlert('<i class="bi bi-exclamation-triangle me-1"></i>Data akun tidak sesuai. ' +
+                         'Periksa kembali email dan password.', 'danger');
+          inputPass.select();
+          return;
+        }
+
+        btnMasuk.disabled = true;
+        btnMasuk.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memverifikasi\u2026';
+
+        var sesi = {
+          nama: admin.nama,
+          email: admin.email,
+          peran: admin.peran || 'Administrator',
+          masuk: new Date().toISOString()
+        };
+
+        var tersimpan = tulisJson(sessionStorage, KUNCI_SESI_ADMIN, sesi);
+        if (!tersimpan) {
+          btnMasuk.disabled = false;
+          btnMasuk.innerHTML = '<i class="bi bi-box-arrow-in-right me-2"></i>Masuk sebagai Admin';
+          tampilkanAlert('<i class="bi bi-exclamation-triangle me-1"></i>Penyimpanan browser diblokir sehingga ' +
+                         'sesi Admin tidak dapat dibuat. Aktifkan cookie/site data lalu coba lagi.', 'danger');
+          return;
+        }
+
+        try {
+          if (ingatEmail.checked) {
+            localStorage.setItem(KUNCI_INGAT, admin.email);
+          } else {
+            localStorage.removeItem(KUNCI_INGAT);
+          }
+        } catch (err) { /* diabaikan: hanya fitur kenyamanan */ }
+
+        window.setTimeout(function () {
+          window.location.href = tujuanSetelahMasuk();
+        }, 450);
+      });
+
+      inputEmail.addEventListener('input', function () { inputEmail.setCustomValidity(''); });
+      inputPass.addEventListener('input', function () { inputPass.setCustomValidity(''); });
+    })();
+  </script>
+</body>
+</html>

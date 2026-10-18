@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unggah Dokumen &mdash; Deteksi Plagiarisme</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #0d6efd; }
+
+    body {
+      background:
+        radial-gradient(1100px 420px at 10% -10%, #e7f0ff 0%, transparent 60%),
+        radial-gradient(900px 380px at 100% 0%, #eafaf3 0%, transparent 55%),
+        #f4f6fb;
+      min-height: 100vh;
+    }
+
+    .navbar-brand-icon {
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .18);
+      border-radius: .6rem;
+    }
+
+    .card { border: 1px solid rgba(15, 23, 42, .07); border-radius: 1rem; }
+    .card-header { border-radius: 1rem 1rem 0 0 !important; }
+
+    /* ---------- Dropzone ---------- */
+    .dropzone {
+      border: 2px dashed #c7d2e4;
+      border-radius: .9rem;
+      background: #fbfcff;
+      padding: 2rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s ease, background .15s ease, transform .15s ease;
+    }
+    .dropzone:hover { border-color: var(--brand); background: #f4f8ff; }
+    .dropzone.is-dragover {
+      border-color: var(--brand);
+      background: #eaf2ff;
+      transform: scale(1.005);
+    }
+    .dropzone.is-invalid { border-color: #dc3545; background: #fff5f5; }
+    .dropzone-icon { font-size: 2.25rem; color: var(--brand); line-height: 1; }
+    .dropzone small { color: #6b7280; }
+
+    /* ---------- File chip ---------- */
+    .file-chip {
+      display: flex; align-items: center; gap: .75rem;
+      padding: .75rem .9rem;
+      border: 1px solid #dbe3f0;
+      border-radius: .75rem;
+      background: #fff;
+    }
+    .file-chip .file-badge {
+      width: 42px; height: 42px; flex: 0 0 42px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: .6rem; font-size: 1.25rem;
+      background: #eef4ff; color: var(--brand);
+    }
+    .file-chip .file-name {
+      font-weight: 600; font-size: .925rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .min-w-0 { min-width: 0; }
+
+    /* ---------- Result ---------- */
+    .score-ring {
+      width: 108px; height: 108px; border-radius: 50%;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: conic-gradient(#ffc107 0 34%, #e9eef6 34% 100%);
+      flex: 0 0 108px;
+    }
+    .score-ring .inner {
+      width: 84px; height: 84px; border-radius: 50%; background: #fff;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .score-ring .val { font-size: 1.35rem; font-weight: 700; line-height: 1; }
+    .score-ring .lbl { font-size: .68rem; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
+
+    .stat-box { border: 1px solid #e5eaf3; border-radius: .75rem; padding: .75rem .9rem; height: 100%; }
+    .stat-box .stat-label { font-size: .75rem; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; }
+    .stat-box .stat-value { font-weight: 600; }
+
+    footer { color: #7c8698; font-size: .82rem; }
+  </style>
+</head>
+<body>
+
+  <!-- ============ NAVBAR ============ -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold" href="index.html">
+        <span class="navbar-brand-icon"><i class="bi bi-shield-check"></i></span>
+        <span>Deteksi Plagiarisme</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navMain">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
+          <li class="nav-item"><a class="nav-link" href="index.html"><i class="bi bi-house-door me-1"></i>Beranda</a></li>
+          <li class="nav-item"><a class="nav-link active" href="upload.html"><i class="bi bi-cloud-arrow-up me-1"></i>Unggah Dokumen</a></li>
+          <li class="nav-item"><a class="nav-link" href="riwayat.html"><i class="bi bi-clock-history me-1"></i>Riwayat</a></li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+              <i class="bi bi-person-circle me-1"></i><span id="navNamaPengguna">Pengguna</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="riwayat.html"><i class="bi bi-clock-history me-2"></i>Riwayat Saya</a></li>
+              <li><a class="dropdown-item" href="login-admin.html"><i class="bi bi-shield-lock me-2"></i>Masuk sebagai Admin</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item text-danger" href="#" id="navLogout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4 py-lg-5">
+
+    <!-- ============ HEADING ============ -->
+    <div class="mb-4">
+      <h1 class="h4 fw-bold mb-1">Unggah Dokumen Proposal / Laporan Tugas Akhir</h1>
+      <p class="text-secondary mb-0">
+        Unggah dokumen proposal atau laporan Tugas Akhir, lalu jalankan pemeriksaan indikasi
+        plagiarisme dan struktur dokumen berbasis AI.
+      </p>
+    </div>
+
+    <div class="row g-4">
+      <!-- ============ FORM ============ -->
+      <div class="col-lg-8">
+        <div class="card shadow-sm">
+          <div class="card-header bg-white py-3">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-file-earmark-arrow-up text-primary me-2"></i>Form Unggah Dokumen</h2>
+          </div>
+
+          <div class="card-body p-3 p-md-4">
+            <form id="formUpload" novalidate>
+
+              <!-- Judul -->
+              <div class="mb-3">
+                <label for="judul" class="form-label fw-semibold">
+                  Judul Dokumen <span class="text-danger">*</span>
+                </label>
+                <input type="text" class="form-control" id="judul" name="judul"
+                       placeholder="Contoh: Sistem Informasi Monitoring Skripsi Berbasis Web"
+                       maxlength="200" required>
+                <div class="invalid-feedback">Judul dokumen wajib diisi (minimal 5 karakter).</div>
+              </div>
+
+              <!-- Nama Mahasiswa -->
+              <div class="mb-3">
+                <label for="nama" class="form-label fw-semibold">
+                  Nama Mahasiswa <span class="text-danger">*</span>
+                </label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text"><i class="bi bi-person"></i></span>
+                  <input type="text" class="form-control" id="nama" name="nama"
+                         placeholder="Nama lengkap mahasiswa" maxlength="100" minlength="3" required>
+                  <div class="invalid-feedback">Nama mahasiswa wajib diisi (minimal 3 karakter).</div>
+                </div>
+              </div>
+
+              <!-- NIM + Jenis -->
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label for="nim" class="form-label fw-semibold">
+                    NIM <span class="text-danger">*</span>
+                  </label>
+                  <div class="input-group has-validation">
+                    <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
+                    <input type="text" class="form-control" id="nim" name="nim"
+                           inputmode="numeric" placeholder="11241002" maxlength="12"
+                           pattern="[0-9]{8,12}" required>
+                    <div class="invalid-feedback">NIM wajib diisi berupa angka 8&ndash;12 digit.</div>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <label for="jenis" class="form-label fw-semibold">Jenis Dokumen</label>
+                  <select class="form-select" id="jenis" name="jenis">
+                    <option value="proposal" selected>Proposal Tugas Akhir</option>
+                    <option value="laporan">Laporan Tugas Akhir</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- File picker -->
+              <div class="mb-3">
+                <label class="form-label fw-semibold">
+                  Berkas Dokumen <span class="text-danger">*</span>
+                </label>
+
+                <div id="dropzone" class="dropzone" tabindex="0" role="button"
+                     aria-label="Pilih berkas dokumen atau tarik ke sini">
+                  <div class="dropzone-icon mb-2"><i class="bi bi-cloud-arrow-up"></i></div>
+                  <div class="fw-semibold">Tarik &amp; lepas berkas di sini, atau klik untuk memilih</div>
+                  <small>Format: PDF, DOC, DOCX &middot; Maksimal 10 MB</small>
+                </div>
+
+                <input type="file" id="fileInput" name="file" class="d-none"
+                       accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
+
+                <div class="invalid-feedback d-block mt-2 d-none" id="fileError"></div>
+
+                <!-- Selected file -->
+                <div id="filePreview" class="file-chip mt-3 d-none">
+                  <span class="file-badge"><i class="bi bi-file-earmark-text"></i></span>
+                  <div class="flex-grow-1 min-w-0">
+                    <div class="file-name" id="fileName">&mdash;</div>
+                    <div class="text-secondary small" id="fileMeta">&mdash;</div>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline-danger" id="fileRemove"
+                          title="Hapus berkas"><i class="bi bi-x-lg"></i></button>
+                </div>
+              </div>
+
+              <!-- Pesan kesalahan umum -->
+              <div id="formAlert" class="alert alert-danger d-none py-2 small" role="alert"></div>
+
+              <!-- Actions -->
+              <div class="d-flex flex-wrap gap-2 pt-1">
+                <button type="submit" class="btn btn-primary px-4" id="btnAnalisa">
+                  <i class="bi bi-search me-2"></i>Periksa Dokumen
+                </button>
+                <button type="reset" class="btn btn-outline-secondary" id="btnReset">
+                  <i class="bi bi-arrow-counterclockwise me-2"></i>Reset
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SIDEBAR INFO ============ -->
+      <div class="col-lg-4">
+        <div class="card shadow-sm mb-4">
+          <div class="card-header bg-white py-3">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-info-circle text-primary me-2"></i>Ketentuan Dokumen</h2>
+          </div>
+          <div class="card-body">
+            <ul class="list-unstyled mb-0 small">
+              <li class="d-flex gap-2 mb-2"><i class="bi bi-check2-circle text-success"></i><span>Format berkas <strong>PDF</strong>, <strong>DOC</strong>, atau <strong>DOCX</strong>.</span></li>
+              <li class="d-flex gap-2 mb-2"><i class="bi bi-check2-circle text-success"></i><span>Ukuran maksimal <strong>10 MB</strong> per dokumen.</span></li>
+              <li class="d-flex gap-2 mb-2"><i class="bi bi-check2-circle text-success"></i><span>Teks harus dapat diekstrak (bukan hasil pemindaian/gambar).</span></li>
+              <li class="d-flex gap-2"><i class="bi bi-check2-circle text-success"></i><span>Dokumen berisi struktur proposal atau laporan Tugas Akhir.</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card shadow-sm border-0" style="background: linear-gradient(135deg,#eef4ff,#f6fbff);">
+          <div class="card-body">
+            <div class="d-flex gap-2 mb-2">
+              <i class="bi bi-lightbulb text-primary fs-5"></i>
+              <h3 class="h6 fw-bold mb-0">Catatan Penting</h3>
+            </div>
+            <p class="small text-secondary mb-0">
+              Hasil pemeriksaan merupakan <strong>indikasi awal</strong> berdasarkan analisis AI,
+              bukan keputusan akhir mengenai plagiarisme. Gunakan sebagai alat bantu sebelum
+              dilakukan penilaian lebih lanjut.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="text-center mt-5">
+      <p class="mb-0">&copy; 2026 &middot; Aplikasi Deteksi Plagiarisme Proposal &amp; Laporan Tugas Akhir Menggunakan AI</p>
+    </footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      /* ==================================================================
+       * FORM UNGGAH DOKUMEN  ->  BACKEND REST API
+       *
+       * Alur data (terhubung ke server.js):
+       *   upload.html  --(POST /api/upload, FormData)--> backend Node.js
+       *   backend      --(201 Created, { id: 'PLG-YYYYMMDD-XXXXXXXX' })--> upload.html
+       *   upload.html  --(pengalihan)--> result.html?id=<ID_HASIL>
+       *   result.html  --(GET /api/results/:id)--> backend
+       *
+       * Jalankan backend lebih dulu:  npm install  &&  npm start
+       * ================================================================== */
+
+      var KUNCI_SESI    = 'sesiPengguna';
+      var KUNCI_RIWAYAT = 'riwayatPemeriksaan';
+
+      // Guard login. Set false bila ingin halaman bisa dibuka tanpa masuk.
+      var WAJIB_LOGIN = true;
+
+      function storageTersedia(storage) {
+        try {
+          storage.setItem('__uji', '1');
+          storage.removeItem('__uji');
+          return true;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function bacaSesi() {
+        try {
+          var raw = sessionStorage.getItem(KUNCI_SESI);
+          return raw ? JSON.parse(raw) : null;
+        } catch (err) {
+          return null;
+        }
+      }
+
+      var sesi = bacaSesi();
+
+      if (WAJIB_LOGIN && !sesi && storageTersedia(sessionStorage)) {
+        window.location.replace('login.html?next=upload.html');
+        return;
+      }
+
+      if (!sesi) sesi = { nama: 'Tamu', nim: '', email: '' };
+
+      // ====== Konfigurasi ======
+      var MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+      var ALLOWED_EXT = ['pdf', 'doc', 'docx'];
+
+      /* Alamat backend REST API. Bila halaman disajikan oleh server yang sama
+         (protokol http/https), origin dipakai langsung sehingga port mengikuti
+         server; bila dibuka dari berkas lokal (file://), backend diakses pada
+         http://localhost:3000 sesuai spesifikasi API. */
+      var API_BASE = (function () {
+        if (/^https?:$/.test(window.location.protocol) && window.location.host) {
+          return window.location.protocol + '//' + window.location.host;
+        }
+        return 'http://localhost:3000';
+      })();
+      var ENDPOINT_UNGGAH = '/api/upload';
+      var TIMEOUT_MS = 120000; // 2 menit: unggah + analisis di server
+
+      // ====== Elemen ======
+      var form        = document.getElementById('formUpload');
+      var inputJudul  = document.getElementById('judul');
+      var inputNama   = document.getElementById('nama');
+      var inputNim    = document.getElementById('nim');
+      var inputJenis  = document.getElementById('jenis');
+      var dropzone    = document.getElementById('dropzone');
+      var fileInput   = document.getElementById('fileInput');
+      var filePreview = document.getElementById('filePreview');
+      var fileNameEl  = document.getElementById('fileName');
+      var fileMetaEl  = document.getElementById('fileMeta');
+      var fileRemove  = document.getElementById('fileRemove');
+      var fileError   = document.getElementById('fileError');
+      var formAlert   = document.getElementById('formAlert');
+      var btnAnalisa  = document.getElementById('btnAnalisa');
+      var labelTombol = '<i class="bi bi-search me-2"></i>Periksa Dokumen';
+
+      // ====== Sesi pengguna di navbar ======
+      var navNama = document.getElementById('navNamaPengguna');
+      navNama.textContent = sesi.nama || 'Pengguna';
+      if (sesi.email) navNama.title = sesi.email;
+
+      // Nama & NIM diisi dari akun yang sedang masuk (masih bisa diubah bila perlu).
+      if (sesi.nim) inputNim.value = sesi.nim;
+      if (sesi.nama && sesi.nama !== 'Tamu') inputNama.value = sesi.nama;
+
+      document.getElementById('navLogout').addEventListener('click', function (e) {
+        e.preventDefault();
+        try { sessionStorage.removeItem(KUNCI_SESI); } catch (err) { /* diabaikan */ }
+        window.location.href = 'login.html';
+      });
+
+      // ====== Util ======
+      function esc(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      function formatBytes(bytes) {
+        if (!bytes) return '0 B';
+        var units = ['B', 'KB', 'MB', 'GB'];
+        var i = Math.floor(Math.log(bytes) / Math.log(1024));
+        i = Math.min(i, units.length - 1);
+        return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+      }
+
+      function getExt(name) {
+        var parts = (name || '').toLowerCase().split('.');
+        return parts.length > 1 ? parts.pop() : '';
+      }
+
+      function iconForExt(ext) {
+        if (ext === 'pdf') return 'bi-file-earmark-pdf';
+        if (ext === 'doc' || ext === 'docx') return 'bi-file-earmark-word';
+        return 'bi-file-earmark-text';
+      }
+
+      function showAlert(pesan) {
+        formAlert.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>' + pesan;
+        formAlert.classList.remove('d-none');
+      }
+
+      function sembunyikanAlert() {
+        formAlert.classList.add('d-none');
+      }
+
+      function showFileError(msg) {
+        fileError.textContent = msg;
+        fileError.classList.remove('d-none');
+        dropzone.classList.add('is-invalid');
+        filePreview.classList.add('d-none');
+        fileNameEl.textContent = '\u2014';
+        fileMetaEl.textContent = '\u2014';
+        fileInput.setCustomValidity(msg);
+      }
+
+      function clearFileError() {
+        fileError.textContent = '';
+        fileError.classList.add('d-none');
+        dropzone.classList.remove('is-invalid');
+        fileInput.setCustomValidity('');
+      }
+
+      function renderFile(file) {
+        if (!file) return;
+        var ext = getExt(file.name);
+
+        if (ALLOWED_EXT.indexOf(ext) === -1) {
+          showFileError('Format berkas tidak didukung. Gunakan PDF, DOC, atau DOCX.');
+          return;
+        }
+        if (file.size > MAX_SIZE) {
+          showFileError('Ukuran berkas ' + formatBytes(file.size) + ' melebihi batas maksimal 10 MB.');
+          return;
+        }
+        if (file.size === 0) {
+          showFileError('Berkas kosong atau tidak dapat dibaca.');
+          return;
+        }
+
+        clearFileError();
+        var badge = filePreview.querySelector('.file-badge i');
+        badge.className = 'bi ' + iconForExt(ext);
+        fileNameEl.textContent = file.name;
+        fileNameEl.title = file.name;
+        fileMetaEl.textContent = formatBytes(file.size) + ' \u00b7 ' + ext.toUpperCase();
+        filePreview.classList.remove('d-none');
+        dropzone.classList.add('d-none');
+      }
+
+      // ====== Dropzone events ======
+      dropzone.addEventListener('click', function () { fileInput.click(); });
+      dropzone.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+      });
+
+      ['dragenter', 'dragover'].forEach(function (ev) {
+        dropzone.addEventListener(ev, function (e) {
+          e.preventDefault(); e.stopPropagation();
+          dropzone.classList.add('is-dragover');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach(function (ev) {
+        dropzone.addEventListener(ev, function (e) {
+          e.preventDefault(); e.stopPropagation();
+          dropzone.classList.remove('is-dragover');
+        });
+      });
+
+      dropzone.addEventListener('drop', function (e) {
+        var files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length) {
+          fileInput.files = files;   // sinkronkan ke input
+          renderFile(files[0]);
+        }
+      });
+
+      fileInput.addEventListener('change', function () {
+        if (fileInput.files.length) renderFile(fileInput.files[0]);
+      });
+
+      fileRemove.addEventListener('click', function () {
+        fileInput.value = '';
+        clearFileError();
+        filePreview.classList.add('d-none');
+        dropzone.classList.remove('d-none');
+      });
+
+      // ====== Reset ======
+      form.addEventListener('reset', function () {
+        clearFileError();
+        sembunyikanAlert();
+        filePreview.classList.add('d-none');
+        dropzone.classList.remove('d-none');
+        form.classList.remove('was-validated');
+      });
+
+      // ====== Submit: validasi lalu lanjut ke halaman proses ======
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        sembunyikanAlert();
+
+        // Validasi judul (selain atribut HTML)
+        if (inputJudul.value.trim().length < 5) {
+          inputJudul.setCustomValidity('Judul minimal 5 karakter.');
+        } else {
+          inputJudul.setCustomValidity('');
+        }
+
+        // Wajib ada berkas terpilih
+        if (!fileInput.files.length) {
+          showFileError('Pilih berkas dokumen terlebih dahulu.');
+        }
+
+        form.classList.add('was-validated');
+
+        var isOk = form.checkValidity() &&
+                   fileInput.files.length > 0 &&
+                   fileError.classList.contains('d-none');
+
+        if (!isOk) {
+          var firstInvalid = form.querySelector(':invalid');
+          if (firstInvalid && !firstInvalid.classList.contains('d-none')) {
+            firstInvalid.focus();
+          } else if (!fileInput.files.length) {
+            dropzone.classList.remove('d-none');
+            dropzone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          return;
+        }
+
+        kirimKeBackend();
+      });
+
+      /* ==================================================================
+       * INTEGRASI BACKEND — POST /api/upload
+       *
+       * Mengirim berkas + metadata (nim, nama, judul, jenis_dokumen, file)
+       * sebagai FormData. Bila server membalas 201 Created, ID hasil
+       * (format PLG-YYYYMMDD-XXXXXXXX) dipakai untuk membuka
+       * result.html?id=<ID_HASIL>. Bila server membalas 400/500 atau tidak
+       * dapat dihubungi, pesan kesalahan tampil pada #formAlert.
+       * ================================================================== */
+
+      function aktifkanTombol(sibuk) {
+        btnAnalisa.disabled = sibuk;
+        btnAnalisa.innerHTML = sibuk
+          ? '<span class="spinner-border spinner-border-sm me-2"></span>Mengunggah &amp; menganalisis\u2026'
+          : labelTombol;
+      }
+
+      function formatWaktu(iso) {
+        var t = iso ? new Date(iso) : new Date();
+        if (isNaN(t.getTime())) return String(iso || '');
+        try {
+          return t.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) +
+                 ', ' + t.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        } catch (err) {
+          return t.toISOString();
+        }
+      }
+
+      /** Menyimpan salinan ringkas hasil ke riwayat lokal (dibaca riwayat.html). */
+      function simpanRiwayatLokal(data) {
+        var lama;
+        try {
+          lama = JSON.parse(localStorage.getItem(KUNCI_RIWAYAT) || '[]');
+        } catch (err) {
+          lama = [];
+        }
+        if (!Array.isArray(lama)) lama = [];
+
+        var meta   = (data && data.document_metadata) || {};
+        var berkas = (data && data.berkas) || {};
+        var skor   = Number(data && data.overall_similarity_score);
+        if (isNaN(skor)) skor = 0;
+
+        lama.unshift({
+          id: (data && data.id) || '',
+          skor: skor,
+          arsip: (data && data.created_at) || new Date().toISOString(),
+          dokumen: {
+            judul: meta.judul || inputJudul.value.trim(),
+            nim: meta.nim || inputNim.value.trim(),
+            jenis: meta.jenis_dokumen || inputJenis.options[inputJenis.selectedIndex].text,
+            berkas: berkas.nama_asli || '',
+            ukuran: berkas.ukuran || '',
+            halaman: '',
+            diperiksa: formatWaktu(data && data.created_at)
+          }
+        });
+
+        try {
+          localStorage.setItem(KUNCI_RIWAYAT, JSON.stringify(lama.slice(0, 100)));
+        } catch (err) {
+          /* storage penuh/diblokir -> riwayat lokal dilewati, unggahan tetap jalan */
+        }
+      }
+
+      function tanganiGagal(err) {
+        aktifkanTombol(false);
+
+        var pesan = esc(err && err.message ? err.message : String(err));
+
+        if (err && err.network) {
+          showAlert('<strong>Tidak dapat terhubung ke backend ' + esc(API_BASE) + '.</strong> ' +
+                    pesan + ' Pastikan server sudah dijalankan (<code>npm start</code>).');
+          return;
+        }
+        if (err && err.timeout) {
+          showAlert('<strong>Permintaan melebihi batas waktu.</strong> ' + pesan);
+          return;
+        }
+
+        var status = err && err.status;
+        if (status === 400) {
+          showAlert('<strong>Permintaan ditolak server (HTTP 400).</strong> ' + pesan);
+        } else if (status >= 500) {
+          showAlert('<strong>Terjadi kesalahan pada server (HTTP ' + status + ').</strong> ' + pesan);
+        } else if (status) {
+          showAlert('<strong>Permintaan gagal (HTTP ' + status + ').</strong> ' + pesan);
+        } else {
+          showAlert('<strong>Gagal memproses respons server.</strong> ' + pesan);
+        }
+      }
+
+      function kirimKeBackend() {
+        var berkas = fileInput.files[0];
+        if (!berkas) {
+          showFileError('Pilih berkas dokumen terlebih dahulu.');
+          return;
+        }
+
+        // ---- FormData sesuai kontrak POST /api/upload ----
+        var fd = new FormData();
+        fd.append('nim', inputNim.value.trim());
+        fd.append('nama', inputNama.value.trim());
+        fd.append('judul', inputJudul.value.trim());
+        fd.append('jenis_dokumen', inputJenis.value);   // 'proposal' | 'laporan'
+        fd.append('file', berkas, berkas.name);         // PDF / DOC / DOCX
+
+        sembunyikanAlert();
+        aktifkanTombol(true);
+
+        var pengendali = window.AbortController ? new AbortController() : null;
+        var jamPasir = window.setTimeout(function () {
+          if (pengendali) pengendali.abort();
+        }, TIMEOUT_MS);
+
+        function selesai() { window.clearTimeout(jamPasir); }
+
+        fetch(API_BASE + ENDPOINT_UNGGAH, {
+          method: 'POST',
+          body: fd,                                     // Content-Type multipart diisi otomatis
+          headers: { 'Accept': 'application/json' },
+          signal: pengendali ? pengendali.signal : undefined
+        }).then(function (res) {
+          return res.text().then(function (teks) {
+            selesai();
+
+            var data = null;
+            try { data = teks ? JSON.parse(teks) : null; } catch (err) { data = null; }
+
+            if (!res.ok) {
+              var err = new Error(
+                (data && (data.message || data.error)) ||
+                ('Server membalas HTTP ' + res.status + ' tanpa keterangan.')
+              );
+              err.status = res.status;
+              err.detail = (data && data.detail) || null;
+              throw err;
+            }
+            if (!data) {
+              throw new Error('Respons server tidak dapat dibaca sebagai JSON.');
+            }
+            return data;
+          });
+        }, function (err) {
+          selesai();
+          if (err && err.name === 'AbortError') {
+            var habis = new Error('Permintaan melebihi batas waktu ' + (TIMEOUT_MS / 1000) + ' detik.');
+            habis.timeout = true;
+            throw habis;
+          }
+          var jaringan = new Error('Koneksi ke server gagal (server belum berjalan atau diblokir CORS).');
+          jaringan.network = true;
+          throw jaringan;
+        }).then(function (data) {
+          /* ---- 201 Created: ambil ID hasil, lalu buka result.html ---- */
+          var id = data && data.id ? String(data.id) : '';
+          if (!id) {
+            throw new Error('Server tidak mengembalikan ID hasil analisis.');
+          }
+
+          simpanRiwayatLokal(data);
+
+          aktifkanTombol(false);
+          window.location.href = 'result.html?id=' + encodeURIComponent(id);
+        }).catch(tanganiGagal);
+      }
+    })();
+  </script>
+</body>
+</html>

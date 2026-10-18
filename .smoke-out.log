@@ -1,0 +1,13 @@
+[db] 1 hasil analisis dimuat dari data\hasil-analisis.json
+
+  Aplikasi Deteksi Plagiarisme Proposal & Laporan Tugas Akhir
+  Backend API — Progress 30% (mock data / simulasi LLM)
+  ------------------------------------------------------------
+  Frontend   : http://localhost:3500/index.html
+  Unggah     : http://localhost:3500/upload.html
+  Hasil      : http://localhost:3500/result.html
+  API health : http://localhost:3500/api/health
+  CORS origin: *
+  Penyimpanan: data\hasil-analisis.json
+
+GET /api/health -> 200 (7 ms)

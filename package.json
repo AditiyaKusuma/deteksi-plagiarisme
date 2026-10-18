@@ -1,0 +1,31 @@
+{
+  "name": "deteksi-plagiarisme-api",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Backend REST API Aplikasi Deteksi Plagiarisme Proposal & Laporan Tugas Akhir: ekstraksi teks PDF/DOCX + analisis LLM via REST API (JSON mode), dengan fallback simulasi",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20.16.0 <21 || >=22.3.0"
+  },
+  "keywords": [
+    "plagiarisme",
+    "tugas-akhir",
+    "express",
+    "rest-api",
+    "mock-data"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^18.0.8",
+    "express": "^4.21.2",
+    "mammoth": "^1.13.0",
+    "multer": "^2.0.2",
+    "pdf-parse": "^2.4.5"
+  }
+}

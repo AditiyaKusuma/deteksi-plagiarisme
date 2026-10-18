@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Masuk &mdash; Deteksi Plagiarisme</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #0d6efd; }
+
+    body {
+      background:
+        radial-gradient(1100px 420px at 10% -10%, #e7f0ff 0%, transparent 60%),
+        radial-gradient(900px 380px at 100% 0%, #eafaf3 0%, transparent 55%),
+        #f4f6fb;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+    }
+
+    .navbar-brand-icon {
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .18);
+      border-radius: .6rem;
+    }
+
+    .card { border: 1px solid rgba(15, 23, 42, .07); border-radius: 1rem; }
+
+    /* ---------- Panel kiri ---------- */
+    .auth-side {
+      background: linear-gradient(160deg, #0d6efd 0%, #0a58ca 55%, #084298 100%);
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+    .auth-side::after {
+      content: "";
+      position: absolute; inset: 0;
+      background: radial-gradient(420px 220px at 100% 0%, rgba(255, 255, 255, .18), transparent 70%);
+      pointer-events: none;
+    }
+    .auth-side .side-list { list-style: none; padding: 0; margin: 0; }
+    .auth-side .side-list li { display: flex; gap: .6rem; align-items: flex-start; margin-bottom: .85rem; }
+    .auth-side .side-list i { margin-top: .15rem; }
+    .auth-side small { color: rgba(255, 255, 255, .78); }
+
+    /* ---------- Tab ---------- */
+    .nav-pills .nav-link { border-radius: .6rem; font-weight: 600; color: #5a6474; }
+    .nav-pills .nav-link.active { background: #eef4ff; color: var(--brand); }
+
+    .form-label { font-size: .9rem; }
+    .password-toggle { border-color: #dee2e6; color: #6b7280; }
+
+    footer { color: #7c8698; font-size: .82rem; }
+  </style>
+</head>
+<body>
+
+  <main class="container py-4 py-lg-5">
+    <div class="row justify-content-center">
+      <div class="col-lg-10 col-xl-9">
+
+        <div class="card shadow-sm overflow-hidden">
+          <div class="row g-0">
+
+            <!-- ============ PANEL INFORMASI ============ -->
+            <div class="col-md-5 auth-side p-4 p-lg-5 d-flex flex-column">
+              <div class="d-flex align-items-center gap-2 fw-semibold mb-4">
+                <span class="navbar-brand-icon"><i class="bi bi-shield-check"></i></span>
+                <span>Deteksi Plagiarisme</span>
+              </div>
+
+              <h1 class="h5 fw-bold mb-3">Masuk untuk memeriksa dokumen Tugas Akhir</h1>
+
+              <ul class="side-list small">
+                <li><i class="bi bi-cloud-arrow-up"></i><span>Unggah proposal atau laporan Tugas Akhir (PDF, DOC, DOCX).</span></li>
+                <li><i class="bi bi-cpu"></i><span>Analisis indikasi plagiarisme dan struktur dokumen berbasis AI.</span></li>
+                <li><i class="bi bi-clock-history"></i><span>Hasil dan riwayat pemeriksaan tersimpan di akunmu.</span></li>
+              </ul>
+
+              <div class="mt-auto pt-4">
+                <small>
+                  <i class="bi bi-info-circle me-1"></i>
+                  Hasil pemeriksaan bersifat <strong>indikasi awal</strong>, bukan keputusan akhir
+                  mengenai plagiarisme.
+                </small>
+              </div>
+            </div>
+
+            <!-- ============ FORM ============ -->
+            <div class="col-md-7 bg-white">
+              <div class="p-4 p-lg-5">
+
+                <h2 class="h6 fw-bold mb-1">Selamat datang kembali</h2>
+                <p class="text-secondary small mb-4">Masuk ke akunmu atau daftar jika belum punya akun.</p>
+
+                <div id="authAlert" class="alert d-none py-2 small" role="alert"></div>
+
+                <!-- Tab -->
+                <ul class="nav nav-pills gap-2 mb-4" role="tablist">
+                  <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tabMasukBtn" data-bs-toggle="pill"
+                            data-bs-target="#panelMasuk" type="button" role="tab" aria-controls="panelMasuk"
+                            aria-selected="true">
+                      <i class="bi bi-box-arrow-in-right me-1"></i>Masuk
+                    </button>
+                  </li>
+                  <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tabDaftarBtn" data-bs-toggle="pill"
+                            data-bs-target="#panelDaftar" type="button" role="tab" aria-controls="panelDaftar"
+                            aria-selected="false">
+                      <i class="bi bi-person-plus me-1"></i>Daftar
+                    </button>
+                  </li>
+                </ul>
+
+                <div class="tab-content">
+
+                  <!-- ===== Masuk ===== -->
+                  <div class="tab-pane fade show active" id="panelMasuk" role="tabpanel" aria-labelledby="tabMasukBtn">
+                    <form id="formMasuk" novalidate>
+
+                      <div class="mb-3">
+                        <label for="loginEmail" class="form-label fw-semibold">Email</label>
+                        <div class="input-group has-validation">
+                          <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                          <input type="email" class="form-control" id="loginEmail" name="loginEmail"
+                                 placeholder="nama@kampus.ac.id" autocomplete="email" required>
+                          <div class="invalid-feedback">Format email tidak valid.</div>
+                        </div>
+                      </div>
+
+                      <div class="mb-3">
+                        <label for="loginPassword" class="form-label fw-semibold">Password</label>
+                        <div class="input-group has-validation">
+                          <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                          <input type="password" class="form-control" id="loginPassword" name="loginPassword"
+                                 placeholder="Minimal 8 karakter" autocomplete="current-password"
+                                 minlength="8" required>
+                          <button class="btn password-toggle toggle-pass" type="button"
+                                  data-target="loginPassword" title="Tampilkan password">
+                            <i class="bi bi-eye"></i>
+                          </button>
+                          <div class="invalid-feedback">Password wajib diisi (minimal 8 karakter).</div>
+                        </div>
+                      </div>
+
+                      <button type="submit" class="btn btn-primary w-100 py-2" id="btnMasuk">
+                        <i class="bi bi-box-arrow-in-right me-2"></i>Masuk
+                      </button>
+
+                      <p class="text-center small text-secondary mt-3 mb-0">
+                        Belum punya akun?
+                        <a href="#" class="text-decoration-none" id="linkKeDaftar">Daftar sekarang</a>
+                      </p>
+                    </form>
+
+                    <div class="alert alert-light border small text-secondary mt-4 mb-0">
+                      <i class="bi bi-key me-1"></i>
+                      Akun demo: <code>aditiya@example.com</code> &middot; password <code>aditiya123</code>
+                      <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="btnIsiDemo">
+                        Isi otomatis
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- ===== Daftar ===== -->
+                  <div class="tab-pane fade" id="panelDaftar" role="tabpanel" aria-labelledby="tabDaftarBtn">
+                    <form id="formDaftar" novalidate>
+
+                      <div class="mb-3">
+                        <label for="daftarNama" class="form-label fw-semibold">Nama Lengkap</label>
+                        <div class="input-group has-validation">
+                          <span class="input-group-text"><i class="bi bi-person"></i></span>
+                          <input type="text" class="form-control" id="daftarNama" name="daftarNama"
+                                 placeholder="Contoh: Aditiya Kusuma" maxlength="60" required>
+                          <div class="invalid-feedback">Nama wajib diisi (minimal 3 karakter).</div>
+                        </div>
+                      </div>
+
+                      <div class="mb-3">
+                        <label for="daftarEmail" class="form-label fw-semibold">Email</label>
+                        <div class="input-group has-validation">
+                          <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                          <input type="email" class="form-control" id="daftarEmail" name="daftarEmail"
+                                 placeholder="nama@kampus.ac.id" autocomplete="email" required>
+                          <div class="invalid-feedback">Format email tidak valid.</div>
+                        </div>
+                      </div>
+
+                      <div class="row g-3 mb-4">
+                        <div class="col-sm-6">
+                          <label for="daftarPassword" class="form-label fw-semibold">Password</label>
+                          <div class="input-group has-validation">
+                            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                            <input type="password" class="form-control" id="daftarPassword" name="daftarPassword"
+                                   placeholder="Minimal 8 karakter" autocomplete="new-password"
+                                   minlength="8" required>
+                            <button class="btn password-toggle toggle-pass" type="button"
+                                    data-target="daftarPassword" title="Tampilkan password">
+                              <i class="bi bi-eye"></i>
+                            </button>
+                            <div class="invalid-feedback">Password minimal 8 karakter.</div>
+                          </div>
+                        </div>
+                        <div class="col-sm-6">
+                          <label for="daftarPassword2" class="form-label fw-semibold">Konfirmasi Password</label>
+                          <div class="input-group has-validation">
+                            <span class="input-group-text"><i class="bi bi-shield-lock"></i></span>
+                            <input type="password" class="form-control" id="daftarPassword2" name="daftarPassword2"
+                                   placeholder="Ulangi password" autocomplete="new-password"
+                                   minlength="8" required>
+                            <div class="invalid-feedback">Konfirmasi password tidak sama.</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button type="submit" class="btn btn-primary w-100 py-2" id="btnDaftar">
+                        <i class="bi bi-person-plus me-2"></i>Buat Akun
+                      </button>
+
+                      <p class="text-center small text-secondary mt-3 mb-0">
+                        Sudah punya akun?
+                        <a href="#" class="text-decoration-none" id="linkKeMasuk">Masuk di sini</a>
+                      </p>
+                    </form>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <footer class="text-center mt-4">
+          <p class="mb-0">&copy; 2026 &middot; Aplikasi Deteksi Plagiarisme Proposal &amp; Laporan Tugas Akhir Menggunakan AI</p>
+        </footer>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      /* ==================================================================
+       * AUTENTIKASI (SIMULASI)
+       * Belum ada backend, jadi akun hasil pendaftaran disimpan di
+       * localStorage dan sesi login di sessionStorage. Saat API sudah
+       * tersedia, ganti blok yang ditandai [API] dengan pemanggilan:
+       *   POST /api/auth/login     { email, password }
+       *   POST /api/auth/register  { nama, email, password }
+       * ================================================================== */
+
+      var KUNCI_AKUN  = 'akunTerdaftar';
+      var KUNCI_SESI  = 'sesiPengguna';
+      var RE_EMAIL    = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+      // Akun contoh supaya halaman bisa langsung dicoba.
+      var AKUN_DEMO = {
+        nama: 'Aditiya Kusuma',
+        nim: '11241002',
+        email: 'aditiya@example.com',
+        password: 'aditiya123'
+      };
+
+      // ====== util ======
+      function bacaJson(storage, kunci, bawaan) {
+        try {
+          var raw = storage.getItem(kunci);
+          return raw ? JSON.parse(raw) : bawaan;
+        } catch (err) {
+          return bawaan;
+        }
+      }
+
+      function tulisJson(storage, kunci, nilai) {
+        try {
+          storage.setItem(kunci, JSON.stringify(nilai));
+          return true;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function bacaAkun() {
+        var daftar = bacaJson(localStorage, KUNCI_AKUN, []);
+        return Array.isArray(daftar) ? daftar : [];
+      }
+
+      // Halaman yang boleh dituju setelah login (mencegah tujuan sembarangan dari URL).
+      function tujuanSetelahMasuk() {
+        var next = null;
+        try {
+          next = new URLSearchParams(window.location.search).get('next');
+        } catch (err) {
+          next = null;
+        }
+        var diizinkan = ['upload.html', 'riwayat.html', 'result.html'];
+        return diizinkan.indexOf(next) !== -1 ? next : 'upload.html';
+      }
+
+      function tampilkanAlert(pesan, jenis) {
+        alertBox.className = 'alert alert-' + jenis + ' py-2 small';
+        alertBox.innerHTML = pesan;
+        alertBox.classList.remove('d-none');
+      }
+
+      function sembunyikanAlert() {
+        alertBox.classList.add('d-none');
+      }
+
+      // ====== elemen ======
+      var alertBox    = document.getElementById('authAlert');
+      var formMasuk   = document.getElementById('formMasuk');
+      var formDaftar  = document.getElementById('formDaftar');
+      var btnMasuk    = document.getElementById('btnMasuk');
+      var loginEmail  = document.getElementById('loginEmail');
+      var loginPass   = document.getElementById('loginPassword');
+      var daftarNama  = document.getElementById('daftarNama');
+      var daftarEmail = document.getElementById('daftarEmail');
+      var daftarPass  = document.getElementById('daftarPassword');
+      var daftarPass2 = document.getElementById('daftarPassword2');
+
+      function bukaTab(idTombol) {
+        var tombol = document.getElementById(idTombol);
+        if (tombol && window.bootstrap && bootstrap.Tab) {
+          bootstrap.Tab.getOrCreateInstance(tombol).show();
+        }
+      }
+
+      // ====== tombol lihat password ======
+      Array.prototype.forEach.call(document.querySelectorAll('.toggle-pass'), function (btn) {
+        btn.addEventListener('click', function () {
+          var input = document.getElementById(btn.getAttribute('data-target'));
+          if (!input) return;
+          var tampil = input.type === 'password';
+          input.type = tampil ? 'text' : 'password';
+          btn.querySelector('i').className = tampil ? 'bi bi-eye-slash' : 'bi bi-eye';
+          btn.setAttribute('title', tampil ? 'Sembunyikan password' : 'Tampilkan password');
+        });
+      });
+
+      // ====== pindah tab lewat tautan ======
+      document.getElementById('linkKeDaftar').addEventListener('click', function (e) {
+        e.preventDefault(); sembunyikanAlert(); bukaTab('tabDaftarBtn');
+      });
+      document.getElementById('linkKeMasuk').addEventListener('click', function (e) {
+        e.preventDefault(); sembunyikanAlert(); bukaTab('tabMasukBtn');
+      });
+
+      // ====== isi kredensial demo ======
+      document.getElementById('btnIsiDemo').addEventListener('click', function () {
+        loginEmail.value = AKUN_DEMO.email;
+        loginPass.value = AKUN_DEMO.password;
+        sembunyikanAlert();
+        loginEmail.focus();
+      });
+
+      // ====== MASUK (UC-02) ======
+      formMasuk.addEventListener('submit', function (e) {
+        e.preventDefault();
+        sembunyikanAlert();
+
+        if (!RE_EMAIL.test(loginEmail.value.trim())) {
+          loginEmail.setCustomValidity('Format email tidak valid.');
+        } else {
+          loginEmail.setCustomValidity('');
+        }
+
+        formMasuk.classList.add('was-validated');
+        if (!formMasuk.checkValidity()) {
+          tampilkanAlert('Periksa kembali data yang kamu masukkan.', 'danger');
+          return;
+        }
+
+        var email = loginEmail.value.trim().toLowerCase();
+        var sandi = loginPass.value;
+
+        // [API] ganti dengan POST /api/auth/login
+        var akun = bacaAkun().filter(function (a) {
+          return String(a.email).toLowerCase() === email;
+        })[0];
+
+        var cocok = (akun && akun.password === sandi) ||
+                    (email === AKUN_DEMO.email && sandi === AKUN_DEMO.password);
+
+        if (!cocok) {
+          tampilkanAlert('<i class="bi bi-exclamation-triangle me-1"></i>Data akun tidak sesuai. ' +
+                         'Periksa kembali email dan password.', 'danger');
+          loginPass.select();
+          return;
+        }
+
+        var profil = akun || AKUN_DEMO;
+
+        btnMasuk.disabled = true;
+        btnMasuk.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memverifikasi\u2026';
+
+        var sesi = {
+          nama: profil.nama,
+          nim: profil.nim || '',
+          email: profil.email,
+          masuk: new Date().toISOString()
+        };
+        tulisJson(sessionStorage, KUNCI_SESI, sesi);
+
+        // Bila sessionStorage diblokir browser, halaman lain akan menampilkan
+        // mode tamu -- pengalihan tetap dilanjutkan supaya demo tidak mentok.
+        window.setTimeout(function () {
+          window.location.href = tujuanSetelahMasuk();
+        }, 450);
+      });
+
+      // ====== DAFTAR (UC-01) ======
+      formDaftar.addEventListener('submit', function (e) {
+        e.preventDefault();
+        sembunyikanAlert();
+
+        if (daftarNama.value.trim().length < 3) {
+          daftarNama.setCustomValidity('Nama wajib diisi (minimal 3 karakter).');
+        } else {
+          daftarNama.setCustomValidity('');
+        }
+
+        if (!RE_EMAIL.test(daftarEmail.value.trim())) {
+          daftarEmail.setCustomValidity('Format email tidak valid.');
+        } else {
+          daftarEmail.setCustomValidity('');
+        }
+
+        daftarPass2.setCustomValidity(
+          daftarPass2.value !== daftarPass.value ? 'Konfirmasi password tidak sama.' : ''
+        );
+
+        formDaftar.classList.add('was-validated');
+
+        if (daftarPass.value.length < 8) {
+          daftarPass.setCustomValidity('Password minimal 8 karakter.');
+        } else {
+          daftarPass.setCustomValidity('');
+        }
+
+        if (!formDaftar.checkValidity()) {
+          tampilkanAlert('Data pendaftaran belum lengkap atau belum sesuai.', 'danger');
+          return;
+        }
+
+        var email = daftarEmail.value.trim().toLowerCase();
+        var akun = bacaAkun();
+
+        // Exception UC-01: akun dengan data yang sama sudah terdaftar.
+        var sudahAda = akun.some(function (a) {
+          return String(a.email).toLowerCase() === email;
+        }) || email === AKUN_DEMO.email;
+
+        if (sudahAda) {
+          tampilkanAlert('<i class="bi bi-exclamation-triangle me-1"></i>Email <strong>' + email +
+                         '</strong> sudah terdaftar. Silakan masuk atau gunakan email lain.', 'warning');
+          bukaTab('tabMasukBtn');
+          loginEmail.value = email;
+          return;
+        }
+
+        akun.push({
+          nama: daftarNama.value.trim(),
+          email: email,
+          password: daftarPass.value,
+          dibuat: new Date().toISOString()
+        });
+
+        if (!tulisJson(localStorage, KUNCI_AKUN, akun)) {
+          tampilkanAlert('<i class="bi bi-exclamation-triangle me-1"></i>Penyimpanan browser diblokir, ' +
+                         'akun tidak dapat disimpan. Coba jalankan halaman lewat server lokal.', 'danger');
+          return;
+        }
+
+        formDaftar.reset();
+        formDaftar.classList.remove('was-validated');
+        loginEmail.value = email;
+        loginPass.value = '';
+        bukaTab('tabMasukBtn');
+        tampilkanAlert('<i class="bi bi-check2-circle me-1"></i>Pendaftaran berhasil. ' +
+                       'Silakan masuk dengan akun barumu.', 'success');
+        loginPass.focus();
+      });
+
+      // Bersihkan pesan validasi kustom saat pengguna mengetik ulang.
+      [[loginEmail, ''], [daftarNama, ''], [daftarEmail, ''], [daftarPass, ''], [daftarPass2, '']]
+        .forEach(function (pasangan) {
+          pasangan[0].addEventListener('input', function () { pasangan[0].setCustomValidity(''); });
+        });
+      daftarPass.addEventListener('input', function () { daftarPass2.setCustomValidity(''); });
+    })();
+  </script>
+</body>
+</html>

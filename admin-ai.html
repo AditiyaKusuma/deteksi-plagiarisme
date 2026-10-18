@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pengaturan Layanan AI (Admin) &mdash; Deteksi Plagiarisme</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #0d6efd; --admin: #12275a; }
+
+    body {
+      background:
+        radial-gradient(1100px 420px at 10% -10%, #e7f0ff 0%, transparent 60%),
+        radial-gradient(900px 380px at 100% 0%, #eef7ff 0%, transparent 55%),
+        #f4f6fb;
+      min-height: 100vh;
+    }
+
+    .navbar-brand-icon {
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .18);
+      border-radius: .6rem;
+    }
+    .navbar .badge-admin { font-size: .6rem; letter-spacing: .06em; vertical-align: middle; }
+
+    .card { border: 1px solid rgba(15, 23, 42, .07); border-radius: 1rem; }
+    .card-header { border-radius: 1rem 1rem 0 0 !important; }
+    .min-w-0 { min-width: 0; }
+
+    .stat-tile { border: 1px solid #e5eaf3; border-radius: .75rem; padding: .85rem 1rem; height: 100%; }
+    .stat-tile .tile-label { font-size: .72rem; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; }
+    .stat-tile .tile-value { font-weight: 700; font-size: 1.05rem; line-height: 1.3; word-break: break-word; }
+
+    .form-label { font-size: .9rem; }
+    .form-text { font-size: .78rem; }
+    .password-toggle { border-color: #dee2e6; color: #6b7280; }
+    .btn-admin { background: var(--admin); border-color: var(--admin); }
+    .btn-admin:hover, .btn-admin:focus { background: #0d1e46; border-color: #0d1e46; }
+
+    .section-title {
+      font-size: .74rem; text-transform: uppercase; letter-spacing: .05em;
+      color: #6b7280; font-weight: 700;
+    }
+
+    footer { color: #7c8698; font-size: .82rem; }
+
+    @media print {
+      body { background: #fff; }
+      .no-print { display: none !important; }
+      .card { border-color: #ccc; box-shadow: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============ NAVBAR ADMIN ============ -->
+  <nav class="navbar navbar-expand-lg navbar-dark shadow-sm no-print" style="background:#12275a">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold" href="admin-pengguna.html">
+        <span class="navbar-brand-icon"><i class="bi bi-shield-lock"></i></span>
+        <span>Deteksi Plagiarisme</span>
+        <span class="badge bg-light text-dark badge-admin">ADMIN</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navMain">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
+          <li class="nav-item"><a class="nav-link" href="admin-pengguna.html"><i class="bi bi-people me-1"></i>Data Pengguna</a></li>
+          <li class="nav-item"><a class="nav-link" href="admin-dokumen.html"><i class="bi bi-folder2-open me-1"></i>Dokumen</a></li>
+          <li class="nav-item"><a class="nav-link" href="admin-riwayat.html"><i class="bi bi-clock-history me-1"></i>Riwayat Pemeriksaan</a></li>
+          <li class="nav-item"><a class="nav-link active" href="admin-ai.html"><i class="bi bi-sliders me-1"></i>Pengaturan AI</a></li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+              <i class="bi bi-person-badge me-1"></i><span id="navNamaAdmin">Admin</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="index.html"><i class="bi bi-box-arrow-up-right me-2"></i>Buka Aplikasi Pengguna</a></li>
+              <li><a class="dropdown-item" href="login.html"><i class="bi bi-person me-2"></i>Masuk sebagai Pengguna</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item text-danger" href="#" id="navLogout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4 py-lg-5">
+
+    <!-- ============ HEADING ============ -->
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+      <div>
+        <h1 class="h4 fw-bold mb-1">Pengaturan Layanan AI</h1>
+        <p class="text-secondary mb-0">
+          Konfigurasi layanan AI/LLM yang digunakan sistem untuk menganalisis dokumen pengguna.
+        </p>
+      </div>
+      <div class="d-flex align-items-center gap-2 no-print">
+        <span class="badge fs-6 px-3 py-2" id="badgeStatusLayanan">&mdash;</span>
+      </div>
+    </div>
+
+    <!-- ============ RINGKASAN KONFIGURASI ============ -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-lg-3">
+        <div class="stat-tile">
+          <div class="tile-label">Penyedia Layanan</div>
+          <div class="tile-value" id="statPenyedia">&mdash;</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="stat-tile">
+          <div class="tile-label">Model Aktif</div>
+          <div class="tile-value" id="statModel">&mdash;</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="stat-tile">
+          <div class="tile-label">Status Koneksi</div>
+          <div class="tile-value" id="statKoneksi">&mdash;</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="stat-tile">
+          <div class="tile-label">Terakhir Diperbarui</div>
+          <div class="tile-value" id="statDiperbarui">&mdash;</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ ALERT ============ -->
+    <div id="alertUtama" class="alert d-none" role="alert"></div>
+
+    <div class="row g-4">
+
+      <!-- ============ FORM KONFIGURASI ============ -->
+      <div class="col-lg-8">
+        <div class="card shadow-sm">
+          <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-sliders text-primary me-2"></i>Form Konfigurasi Layanan AI</h2>
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="aktif" checked>
+              <label class="form-check-label small fw-semibold" for="aktif">Aktifkan layanan AI/LLM</label>
+            </div>
+          </div>
+
+          <div class="card-body p-3 p-md-4">
+            <form id="formAi" novalidate>
+
+              <!-- ===== Identitas layanan ===== -->
+              <h3 class="section-title mb-3"><i class="bi bi-hdd-network me-1"></i>Identitas Layanan</h3>
+
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label for="penyedia" class="form-label fw-semibold">
+                    Penyedia Layanan AI <span class="text-danger">*</span>
+                  </label>
+                  <select class="form-select" id="penyedia" required>
+                    <option value="openai">OpenAI</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="anthropic">Anthropic Claude</option>
+                    <option value="mistral">Mistral AI</option>
+                    <option value="ollama">Ollama (lokal)</option>
+                    <option value="lainnya">Penyedia lainnya</option>
+                  </select>
+                  <div class="invalid-feedback">Penyedia layanan wajib dipilih.</div>
+                </div>
+
+                <div class="col-md-6">
+                  <label for="model" class="form-label fw-semibold">
+                    Nama Model <span class="text-danger">*</span>
+                  </label>
+                  <input type="text" class="form-control" id="model" list="daftarModel"
+                         placeholder="Contoh: gpt-4o-mini" maxlength="80" required>
+                  <datalist id="daftarModel"></datalist>
+                  <div class="form-text">Model yang dipakai untuk menganalisis indikasi plagiarisme.</div>
+                  <div class="invalid-feedback">Nama model wajib diisi (minimal 2 karakter).</div>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label for="endpoint" class="form-label fw-semibold">
+                  Alamat API (Endpoint) <span class="text-danger">*</span>
+                </label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text"><i class="bi bi-link-45deg"></i></span>
+                  <input type="url" class="form-control" id="endpoint" placeholder="https://api.contoh.com/v1/analyze" required>
+                  <div class="invalid-feedback">Alamat API harus berupa URL http/https yang valid.</div>
+                </div>
+                <div class="form-text">Alamat yang dipanggil sistem saat mengirim teks dokumen untuk dianalisis.</div>
+              </div>
+
+              <div class="mb-4">
+                <label for="apiKey" class="form-label fw-semibold">API Key</label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text"><i class="bi bi-key"></i></span>
+                  <input type="password" class="form-control" id="apiKey" placeholder="Masukkan API Key layanan AI"
+                         autocomplete="off" spellcheck="false">
+                  <button class="btn password-toggle toggle-pass" type="button"
+                          data-target="apiKey" title="Tampilkan API Key">
+                    <i class="bi bi-eye"></i>
+                  </button>
+                  <div class="invalid-feedback">API Key minimal 8 karakter untuk penyedia layanan daring.</div>
+                </div>
+                <div class="alert alert-warning py-2 small mt-2 mb-0">
+                  <i class="bi bi-shield-exclamation me-1"></i>
+                  <strong>Perhatian keamanan:</strong> pada prototipe ini API Key disimpan di
+                  <em>localStorage</em> peramban sehingga <strong>tidak aman</strong>. Pada implementasi
+                  sebenarnya, API Key harus disimpan di sisi server (variabel lingkungan) dan
+                  <strong>tidak boleh</strong> dicatat pada log atau ditampilkan kembali ke peramban.
+                </div>
+              </div>
+
+              <!-- ===== Parameter analisis ===== -->
+              <h3 class="section-title mb-3"><i class="bi bi-toggles2 me-1"></i>Parameter Analisis</h3>
+
+              <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                  <label for="suhu" class="form-label fw-semibold">Suhu (Temperature)</label>
+                  <input type="number" class="form-control" id="suhu" min="0" max="1" step="0.1" value="0.2" required>
+                  <div class="form-text">0 = konsisten, 1 = lebih bervariasi. Rentang 0&ndash;1.</div>
+                  <div class="invalid-feedback">Suhu harus berada pada rentang 0 sampai 1.</div>
+                </div>
+
+                <div class="col-md-4">
+                  <label for="maxToken" class="form-label fw-semibold">Batas Maksimal Token</label>
+                  <input type="number" class="form-control" id="maxToken" min="256" max="32000" step="256" value="4096" required>
+                  <div class="form-text">256&ndash;32.000 token per permintaan analisis.</div>
+                  <div class="invalid-feedback">Batas token harus antara 256 dan 32.000.</div>
+                </div>
+
+                <div class="col-md-4">
+                  <label for="timeout" class="form-label fw-semibold">Waktu Tunggu (detik)</label>
+                  <input type="number" class="form-control" id="timeout" min="5" max="120" step="5" value="60" required>
+                  <div class="form-text">5&ndash;120 detik sebelum permintaan dinyatakan gagal.</div>
+                  <div class="invalid-feedback">Waktu tunggu harus antara 5 dan 120 detik.</div>
+                </div>
+              </div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                  <label for="ambangTinggi" class="form-label fw-semibold">
+                    Ambang Batas Tinggi (&ge;)
+                  </label>
+                  <div class="input-group has-validation">
+                    <input type="number" class="form-control" id="ambangTinggi" min="0" max="100" step="1" value="50" required>
+                    <span class="input-group-text">%</span>
+                    <div class="invalid-feedback">Ambang batas tinggi harus antara 0 dan 100.</div>
+                  </div>
+                </div>
+
+                <div class="col-md-4">
+                  <label for="ambangSedang" class="form-label fw-semibold">
+                    Ambang Batas Sedang (&ge;)
+                  </label>
+                  <div class="input-group has-validation">
+                    <input type="number" class="form-control" id="ambangSedang" min="0" max="100" step="1" value="20" required>
+                    <span class="input-group-text">%</span>
+                    <div class="invalid-feedback">Ambang batas sedang harus antara 0 dan 100.</div>
+                  </div>
+                </div>
+
+                <div class="col-md-4">
+                  <label for="maksUkuran" class="form-label fw-semibold">Ukuran Maks. Dokumen</label>
+                  <div class="input-group has-validation">
+                    <input type="number" class="form-control" id="maksUkuran" min="1" max="50" step="1" value="10" required>
+                    <span class="input-group-text">MB</span>
+                    <div class="invalid-feedback">Ukuran maksimal dokumen harus antara 1 dan 50 MB.</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ===== Opsi pemrosesan ===== -->
+              <h3 class="section-title mb-3 mt-4"><i class="bi bi-gear me-1"></i>Opsi Pemrosesan</h3>
+
+              <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="simpanRiwayat" checked>
+                <label class="form-check-label small" for="simpanRiwayat">
+                  Simpan hasil pemeriksaan ke riwayat pengguna
+                </label>
+              </div>
+
+              <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="tampilSumber" checked>
+                <label class="form-check-label small" for="tampilSumber">
+                  Tampilkan daftar sumber kemiripan pada hasil analisis
+                </label>
+              </div>
+
+              <div class="form-check form-switch mb-4">
+                <input class="form-check-input" type="checkbox" id="koreksiOtomatis">
+                <label class="form-check-label small" for="koreksiOtomatis">
+                  Aktifkan pemeriksaan ulang otomatis bila hasil analisis tidak lengkap
+                </label>
+              </div>
+
+              <!-- ===== Aksi ===== -->
+              <div class="d-flex flex-wrap gap-2 border-top pt-4">
+                <button type="submit" class="btn btn-admin text-white px-4" id="btnSimpan">
+                  <i class="bi bi-save me-2"></i>Simpan Konfigurasi
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="btnUji">
+                  <i class="bi bi-plug me-2"></i>Uji Koneksi
+                </button>
+                <button type="button" class="btn btn-outline-danger ms-auto" id="btnResetBawaan">
+                  <i class="bi bi-arrow-counterclockwise me-2"></i>Kembalikan Bawaan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SIDEBAR ============ -->
+      <div class="col-lg-4">
+        <div class="card shadow-sm mb-4">
+          <div class="card-header bg-white py-3">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-activity text-primary me-2"></i>Status Layanan</h2>
+          </div>
+          <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <span class="small text-secondary">Status konfigurasi</span>
+              <span class="badge" id="badgeKonfigurasi">&mdash;</span>
+            </div>
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <span class="small text-secondary">Status koneksi</span>
+              <span class="badge bg-secondary-subtle text-secondary-emphasis border" id="badgeKoneksi">Belum diuji</span>
+            </div>
+            <div class="d-flex align-items-center justify-content-between mb-0">
+              <span class="small text-secondary">Diperbarui oleh</span>
+              <span class="small fw-semibold" id="infoDiperbaruiOleh">&mdash;</span>
+            </div>
+
+            <hr>
+
+            <p class="small text-secondary mb-0">
+              <i class="bi bi-info-circle me-1"></i>
+              Bila layanan AI tidak aktif atau tidak dapat dihubungi, pemeriksaan dokumen akan
+              berhenti dan pengguna menerima pemberitahuan kegagalan proses AI atau
+              kegagalan koneksi.
+            </p>
+          </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4" style="background: linear-gradient(135deg,#eef4ff,#f6fbff);">
+          <div class="card-body">
+            <div class="d-flex gap-2 mb-2">
+              <i class="bi bi-diagram-3 text-primary fs-5"></i>
+              <h3 class="h6 fw-bold mb-0">Data Store D4</h3>
+            </div>
+            <p class="small text-secondary mb-3">
+              Konfigurasi ini mewakili <strong>D4 &ndash; Konfigurasi Layanan AI</strong> pada
+              Data Flow Diagram: dibaca oleh proses analisis dokumen dan ditulis melalui menu
+              Pengaturan AI.
+            </p>
+            <div class="detail-row py-2">
+              <span class="k">Proses baca</span>
+              <span class="v small">6.1 Melihat Konfigurasi AI</span>
+            </div>
+            <div class="detail-row py-2">
+              <span class="k">Proses validasi</span>
+              <span class="v small">6.2 Memvalidasi Konfigurasi</span>
+            </div>
+            <div class="detail-row py-2">
+              <span class="k">Proses simpan</span>
+              <span class="v small">6.3 Menyimpan Konfigurasi AI</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card shadow-sm no-print">
+          <div class="card-header bg-white py-3">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-tools text-primary me-2"></i>Alat Bantu Demo</h2>
+          </div>
+          <div class="card-body">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="simulasiGagalSimpan">
+              <label class="form-check-label small" for="simulasiGagalSimpan">
+                Simulasikan kegagalan penyimpanan konfigurasi
+              </label>
+            </div>
+            <p class="small text-secondary mb-0 mt-1">
+              Dipakai untuk mendemokan kegagalan penyimpanan konfigurasi.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="text-center mt-5">
+      <p class="mb-0">&copy; 2026 &middot; Aplikasi Deteksi Plagiarisme Proposal &amp; Laporan Tugas Akhir Menggunakan AI</p>
+    </footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      /* ==================================================================
+       * UC-13 MENGATUR LAYANAN AI (ADMIN)
+       *
+       * Flow of Activities:
+       *   1. Admin membuka menu Pengaturan AI.
+       *   2. Sistem menampilkan konfigurasi layanan AI.
+       *   3. Admin memasukkan atau mengubah konfigurasi.
+       *   4. Admin menyimpan perubahan.
+       *   5. Sistem memvalidasi konfigurasi.
+       *   6. Sistem menyimpan konfigurasi.
+       *   7. Sistem menampilkan pemberitahuan bahwa konfigurasi berhasil disimpan.
+       *
+       * Exception:
+       *   1. Konfigurasi tidak valid -> tampilkan pesan kesalahan.
+       *   2. Konfigurasi gagal disimpan -> minta Admin menyimpan kembali.
+       *
+       * Konfigurasi disimpan di localStorage 'konfigurasiAI' (mewakili D4).
+       * [API] ganti muatKonfigurasi()/simpanKonfigurasi() dengan
+       *       GET /api/admin/ai-config dan PUT /api/admin/ai-config
+       * ================================================================== */
+
+      var KUNCI_SESI_ADMIN = 'sesiAdmin';
+      var KUNCI_KONFIG     = 'konfigurasiAI';
+
+      // Guard admin. Set false bila ingin halaman bisa dibuka tanpa autentikasi Admin.
+      var WAJIB_LOGIN_ADMIN = true;
+
+      // Model yang disarankan untuk tiap penyedia (hanya bantuan pengisian).
+      var MODEL_SARAN = {
+        openai:    ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini'],
+        gemini:    ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'],
+        anthropic: ['claude-3-5-haiku-latest', 'claude-3-5-sonnet-latest'],
+        mistral:   ['mistral-small-latest', 'mistral-large-latest'],
+        ollama:    ['llama3.1:8b', 'qwen2.5:7b', 'mistral:7b'],
+        lainnya:   []
+      };
+
+      var KONFIG_BAWAAN = {
+        aktif: true,
+        penyedia: 'openai',
+        model: 'gpt-4o-mini',
+        endpoint: 'https://api.openai.com/v1/chat/completions',
+        apiKey: '',
+        suhu: 0.2,
+        maxToken: 4096,
+        timeout: 60,
+        ambangTinggi: 50,
+        ambangSedang: 20,
+        maksUkuran: 10,
+        simpanRiwayat: true,
+        tampilSumber: true,
+        koreksiOtomatis: false,
+        diperbarui: null,
+        diperbaruiOleh: null
+      };
+
+      /* ---------------- Util ---------------- */
+      function bacaJson(storage, kunci, bawaan) {
+        try {
+          var raw = storage.getItem(kunci);
+          return raw ? JSON.parse(raw) : bawaan;
+        } catch (err) {
+          return bawaan;
+        }
+      }
+
+      function storageTersedia(storage) {
+        try {
+          storage.setItem('__uji', '1');
+          storage.removeItem('__uji');
+          return true;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function tanggalRingkas(iso) {
+        try {
+          var d = new Date(iso);
+          if (isNaN(d.getTime())) return '\u2014';
+          return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) +
+                 ', ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        } catch (err) {
+          return '\u2014';
+        }
+      }
+
+      function angka(input, bawaan) {
+        var v = parseFloat(input.value);
+        return isNaN(v) ? bawaan : v;
+      }
+
+      /* ---------------- Sesi admin & guard ---------------- */
+      var sesi = bacaJson(sessionStorage, KUNCI_SESI_ADMIN, null);
+
+      if (WAJIB_LOGIN_ADMIN && !sesi && storageTersedia(sessionStorage)) {
+        window.location.replace('login-admin.html?next=admin-ai.html');
+        return;
+      }
+
+      var navNama = document.getElementById('navNamaAdmin');
+      navNama.textContent = (sesi && sesi.nama) ? sesi.nama : 'Admin';
+      if (sesi && sesi.email) navNama.title = sesi.email + ' \u00b7 ' + (sesi.peran || 'Administrator');
+
+      document.getElementById('navLogout').addEventListener('click', function (e) {
+        e.preventDefault();
+        try { sessionStorage.removeItem(KUNCI_SESI_ADMIN); } catch (err) { /* diabaikan */ }
+        window.location.href = 'login-admin.html';
+      });
+
+      /* ---------------- Elemen ---------------- */
+      var formAi        = document.getElementById('formAi');
+      var alertUtama    = document.getElementById('alertUtama');
+      var inputAktif    = document.getElementById('aktif');
+      var inputPenyedia = document.getElementById('penyedia');
+      var inputModel    = document.getElementById('model');
+      var inputEndpoint = document.getElementById('endpoint');
+      var inputApiKey   = document.getElementById('apiKey');
+      var inputSuhu     = document.getElementById('suhu');
+      var inputToken    = document.getElementById('maxToken');
+      var inputTimeout  = document.getElementById('timeout');
+      var inputTinggi   = document.getElementById('ambangTinggi');
+      var inputSedang   = document.getElementById('ambangSedang');
+      var inputUkuran   = document.getElementById('maksUkuran');
+      var inputRiwayat  = document.getElementById('simpanRiwayat');
+      var inputSumber   = document.getElementById('tampilSumber');
+      var inputKoreksi  = document.getElementById('koreksiOtomatis');
+      var btnSimpan     = document.getElementById('btnSimpan');
+      var simulasiGagal = document.getElementById('simulasiGagalSimpan');
+      var daftarModel   = document.getElementById('daftarModel');
+
+      /* ---------------- Alert ---------------- */
+      function tampilkanAlert(jenis, judul, isi) {
+        alertUtama.className = 'alert alert-' + jenis;
+        alertUtama.innerHTML =
+          '<div class="d-flex gap-2">' +
+            '<i class="bi ' + (jenis === 'danger' ? 'bi-exclamation-triangle-fill' : 'bi-check2-circle') + ' fs-5"></i>' +
+            '<div><div class="fw-semibold">' + judul + '</div>' +
+            (isi ? '<div class="small">' + isi + '</div>' : '') + '</div>' +
+          '</div>';
+        alertUtama.classList.remove('d-none');
+        alertUtama.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      function sembunyikanAlert() {
+        alertUtama.classList.add('d-none');
+      }
+
+      /* ---------------- Tombol lihat API Key ---------------- */
+      Array.prototype.forEach.call(document.querySelectorAll('.toggle-pass'), function (btn) {
+        btn.addEventListener('click', function () {
+          var input = document.getElementById(btn.getAttribute('data-target'));
+          if (!input) return;
+          var tampil = input.type === 'password';
+          input.type = tampil ? 'text' : 'password';
+          btn.querySelector('i').className = tampil ? 'bi bi-eye-slash' : 'bi bi-eye';
+          btn.setAttribute('title', tampil ? 'Sembunyikan API Key' : 'Tampilkan API Key');
+        });
+      });
+
+      /* ---------------- Isi form <-> objek konfigurasi ---------------- */
+      function isiDaftarModel(penyedia) {
+        var daftar = MODEL_SARAN[penyedia] || [];
+        daftarModel.innerHTML = daftar.map(function (m) { return '<option value="' + m + '"></option>'; }).join('');
+      }
+
+      function terapkanKonfigurasi(k) {
+        inputAktif.checked    = k.aktif !== false;
+        inputPenyedia.value   = k.penyedia || 'openai';
+        inputModel.value      = k.model || '';
+        inputEndpoint.value   = k.endpoint || '';
+        inputApiKey.value     = k.apiKey || '';
+        inputSuhu.value       = (k.suhu != null ? k.suhu : 0.2);
+        inputToken.value      = (k.maxToken != null ? k.maxToken : 4096);
+        inputTimeout.value    = (k.timeout != null ? k.timeout : 60);
+        inputTinggi.value     = (k.ambangTinggi != null ? k.ambangTinggi : 50);
+        inputSedang.value     = (k.ambangSedang != null ? k.ambangSedang : 20);
+        inputUkuran.value     = (k.maksUkuran != null ? k.maksUkuran : 10);
+        inputRiwayat.checked  = k.simpanRiwayat !== false;
+        inputSumber.checked   = k.tampilSumber !== false;
+        inputKoreksi.checked  = k.koreksiOtomatis === true;
+
+        isiDaftarModel(inputPenyedia.value);
+        formAi.classList.remove('was-validated');
+        perbaruiRingkasan(k);
+      }
+
+      function ambilDariForm() {
+        return {
+          aktif: inputAktif.checked,
+          penyedia: inputPenyedia.value,
+          model: inputModel.value.trim(),
+          endpoint: inputEndpoint.value.trim(),
+          apiKey: inputApiKey.value,
+          suhu: angka(inputSuhu, 0.2),
+          maxToken: angka(inputToken, 4096),
+          timeout: angka(inputTimeout, 60),
+          ambangTinggi: angka(inputTinggi, 50),
+          ambangSedang: angka(inputSedang, 20),
+          maksUkuran: angka(inputUkuran, 10),
+          simpanRiwayat: inputRiwayat.checked,
+          tampilSumber: inputSumber.checked,
+          koreksiOtomatis: inputKoreksi.checked
+        };
+      }
+
+      function labelPenyedia(kunci) {
+        var opt = inputPenyedia.querySelector('option[value="' + kunci + '"]');
+        return opt ? opt.textContent : (kunci || '\u2014');
+      }
+
+      function perbaruiRingkasan(k) {
+        var adaKonfig = !!(k && k.diperbarui);
+        var aktif = k && k.aktif !== false;
+
+        document.getElementById('statPenyedia').textContent = k && k.penyedia ? labelPenyedia(k.penyedia) : '\u2014';
+        document.getElementById('statModel').textContent = (k && k.model) ? k.model : '\u2014';
+        document.getElementById('statDiperbarui').textContent = adaKonfig ? tanggalRingkas(k.diperbarui) : 'Belum pernah disimpan';
+
+        var badgeLayanan = document.getElementById('badgeStatusLayanan');
+        if (adaKonfig && aktif) {
+          badgeLayanan.className = 'badge fs-6 px-3 py-2 bg-success-subtle text-success-emphasis border border-success';
+          badgeLayanan.innerHTML = '<i class="bi bi-check-circle me-1"></i>Layanan AI Aktif';
+        } else if (adaKonfig) {
+          badgeLayanan.className = 'badge fs-6 px-3 py-2 bg-secondary-subtle text-secondary-emphasis border';
+          badgeLayanan.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Layanan AI Nonaktif';
+        } else {
+          badgeLayanan.className = 'badge fs-6 px-3 py-2 bg-warning-subtle text-warning-emphasis border border-warning';
+          badgeLayanan.innerHTML = '<i class="bi bi-dash-circle me-1"></i>Belum Dikonfigurasi';
+        }
+
+        var badgeKonfig = document.getElementById('badgeKonfigurasi');
+        if (adaKonfig) {
+          badgeKonfig.className = 'badge bg-success-subtle text-success-emphasis border border-success';
+          badgeKonfig.textContent = 'Tersimpan';
+        } else {
+          badgeKonfig.className = 'badge bg-secondary-subtle text-secondary-emphasis border';
+          badgeKonfig.textContent = 'Bawaan';
+        }
+
+        document.getElementById('statKoneksi').textContent = k && k.statusKoneksi ? k.statusKoneksi : 'Belum diuji';
+        document.getElementById('infoDiperbaruiOleh').textContent = (k && k.diperbaruiOleh) ? k.diperbaruiOleh : '\u2014';
+      }
+
+      /* ---------------- Muat konfigurasi (langkah 1-2) ---------------- */
+      // [API] ganti dengan GET /api/admin/ai-config
+      function muatKonfigurasi() {
+        var k = bacaJson(localStorage, KUNCI_KONFIG, null);
+        if (!k || typeof k !== 'object') k = KONFIG_BAWAAN;
+        terapkanKonfigurasi(k);
+      }
+
+      /* ---------------- Validasi (langkah 5) ---------------- */
+      function validasi() {
+        var salah = [];
+
+        formAi.classList.add('was-validated');
+
+        inputModel.setCustomValidity(inputModel.value.trim().length < 2 ? 'Nama model wajib diisi.' : '');
+        if (inputModel.validationMessage && inputModel.value.trim().length < 2) salah.push('Nama model wajib diisi.');
+
+        var endpointOk = /^https?:\/\/[^\s]+$/i.test(inputEndpoint.value.trim());
+        inputEndpoint.setCustomValidity(endpointOk ? '' : 'Alamat API harus berupa URL http/https yang valid.');
+        if (!endpointOk) salah.push('Alamat API harus berupa URL http/https yang valid.');
+
+        // API Key wajib untuk penyedia layanan daring.
+        var daring = inputPenyedia.value !== 'ollama';
+        var keyOk = !daring || inputApiKey.value.trim().length >= 8;
+        inputApiKey.setCustomValidity(keyOk ? '' : 'API Key minimal 8 karakter.');
+        if (!keyOk) salah.push('API Key wajib diisi minimal 8 karakter untuk penyedia layanan daring.');
+
+        var suhuOk = inputSuhu.value !== '' && angka(inputSuhu, -1) >= 0 && angka(inputSuhu, 99) <= 1;
+        inputSuhu.setCustomValidity(suhuOk ? '' : 'Suhu harus antara 0 dan 1.');
+        if (!suhuOk) salah.push('Suhu harus berada pada rentang 0 sampai 1.');
+
+        var tokenOk = angka(inputToken, 0) >= 256 && angka(inputToken, 0) <= 32000;
+        inputToken.setCustomValidity(tokenOk ? '' : 'Batas token harus antara 256 dan 32000.');
+        if (!tokenOk) salah.push('Batas maksimal token harus antara 256 dan 32.000.');
+
+        var timeoutOk = angka(inputTimeout, 0) >= 5 && angka(inputTimeout, 0) <= 120;
+        inputTimeout.setCustomValidity(timeoutOk ? '' : 'Waktu tunggu harus antara 5 dan 120 detik.');
+        if (!timeoutOk) salah.push('Waktu tunggu harus antara 5 dan 120 detik.');
+
+        var ukuranOk = angka(inputUkuran, 0) >= 1 && angka(inputUkuran, 0) <= 50;
+        inputUkuran.setCustomValidity(ukuranOk ? '' : 'Ukuran maksimal dokumen harus antara 1 dan 50 MB.');
+        if (!ukuranOk) salah.push('Ukuran maksimal dokumen harus antara 1 dan 50 MB.');
+
+        var tinggi = angka(inputTinggi, -1);
+        var sedang = angka(inputSedang, -1);
+        var tinggiOk = tinggi >= 1 && tinggi <= 100;
+        var sedangOk = sedang >= 0 && sedang <= 100 && sedang < tinggi;
+        inputTinggi.setCustomValidity(tinggiOk ? '' : 'Ambang batas tinggi harus antara 1 dan 100.');
+        inputSedang.setCustomValidity(sedangOk ? '' : 'Ambang batas sedang harus lebih kecil dari ambang batas tinggi.');
+        if (!tinggiOk) salah.push('Ambang batas tinggi harus antara 1 dan 100.');
+        if (!sedangOk) salah.push('Ambang batas sedang harus lebih kecil daripada ambang batas tinggi.');
+
+        if (!inputPenyedia.value) salah.push('Penyedia layanan wajib dipilih.');
+
+        var lolosHtml = formAi.checkValidity();
+        return { ok: lolosHtml && salah.length === 0, pesan: salah };
+      }
+
+      /* ---------------- Simpan konfigurasi (langkah 6-7) ---------------- */
+      function simpanKonfigurasi(k) {
+        // Exception 2: kegagalan penyimpanan (disimulasikan lewat alat bantu demo).
+        if (simulasiGagal.checked) return false;
+
+        // [API] ganti dengan PUT /api/admin/ai-config
+        try {
+          localStorage.setItem(KUNCI_KONFIG, JSON.stringify(k));
+          return true;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      formAi.addEventListener('submit', function (e) {
+        e.preventDefault();
+        sembunyikanAlert();
+
+        // Exception 1: konfigurasi tidak valid.
+        var hasil = validasi();
+        if (!hasil.ok) {
+          tampilkanAlert('danger', 'Konfigurasi tidak valid',
+            '<ul class="mb-0 ps-3">' + hasil.pesan.map(function (p) { return '<li>' + p + '</li>'; }).join('') + '</ul>');
+          return;
+        }
+
+        btnSimpan.disabled = true;
+        btnSimpan.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan\u2026';
+
+        window.setTimeout(function () {
+          var k = ambilDariForm();
+          k.diperbarui = new Date().toISOString();
+          k.diperbaruiOleh = (sesi && sesi.nama) ? sesi.nama : 'Admin';
+          k.statusKoneksi = null;
+
+          var ok = simpanKonfigurasi(k);
+
+          btnSimpan.disabled = false;
+          btnSimpan.innerHTML = '<i class="bi bi-save me-2"></i>Simpan Konfigurasi';
+
+          if (!ok) {
+            // Exception 2: konfigurasi gagal disimpan.
+            tampilkanAlert('danger', 'Konfigurasi gagal disimpan',
+              'Perubahan belum tersimpan. Silakan lakukan penyimpanan kembali. Bila masalah berlanjut, ' +
+              'periksa penyimpanan pada peramban (cookie/site data).');
+            return;
+          }
+
+          terapkanKonfigurasi(k);
+          perbaruiRingkasan(k);
+
+          var pesanTambahan = k.aktif === false
+            ? 'Layanan AI saat ini <strong>nonaktif</strong>, sehingga pemeriksaan dokumen tidak dapat dijalankan.'
+            : 'Pemeriksaan dokumen akan memakai model <strong>' + k.model + '</strong> dari ' + labelPenyedia(k.penyedia) + '.';
+
+          tampilkanAlert('success', 'Konfigurasi berhasil disimpan', pesanTambahan);
+        }, 500);
+      });
+
+      /* ---------------- Uji koneksi (simulasi status layanan) ---------------- */
+      document.getElementById('btnUji').addEventListener('click', function () {
+        sembunyikanAlert();
+
+        var k = bacaJson(localStorage, KUNCI_KONFIG, null) || ambilDariForm();
+        if (k.aktif === false) {
+          tampilkanAlert('danger', 'Layanan AI sedang nonaktif',
+            'Aktifkan layanan AI terlebih dahulu sebelum menguji koneksi.');
+          return;
+        }
+
+        var tombol = this;
+        tombol.disabled = true;
+        tombol.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menguji\u2026';
+
+        // [API] ganti dengan GET /api/admin/ai-config/test
+        window.setTimeout(function () {
+          tombol.disabled = false;
+          tombol.innerHTML = '<i class="bi bi-plug me-2"></i>Uji Koneksi';
+
+          var adaKey = (k.apiKey || '').length >= 8;
+          var berhasil = adaKey && k.penyedia !== 'ollama';
+          var badgeKoneksi = document.getElementById('badgeKoneksi');
+          var status = berhasil ? 'Terhubung' : 'Tidak terhubung';
+
+          badgeKoneksi.className = 'badge ' + (berhasil
+            ? 'bg-success-subtle text-success-emphasis border border-success'
+            : 'bg-danger-subtle text-danger-emphasis border border-danger');
+          badgeKoneksi.textContent = status;
+          document.getElementById('statKoneksi').textContent = status;
+
+          // Simpan status koneksi terakhir bila konfigurasi sudah pernah disimpan.
+          var tersimpan = bacaJson(localStorage, KUNCI_KONFIG, null);
+          if (tersimpan) {
+            tersimpan.statusKoneksi = status;
+            try { localStorage.setItem(KUNCI_KONFIG, JSON.stringify(tersimpan)); } catch (err) { /* diabaikan */ }
+          }
+
+          if (berhasil) {
+            tampilkanAlert('success', 'Uji koneksi berhasil',
+              'Layanan AI dapat dihubungi pada ' + tanggalRingkas(new Date().toISOString()) + '.');
+          } else {
+            tampilkanAlert('danger', 'Uji koneksi gagal',
+              'Layanan AI tidak dapat dihubungi. Periksa API Key, alamat API, dan koneksi internet aplikasi.');
+          }
+        }, 900);
+      });
+
+      /* ---------------- Kembalikan bawaan ---------------- */
+      document.getElementById('btnResetBawaan').addEventListener('click', function () {
+        sembunyikanAlert();
+        // Tidak memakai confirm() bawaan browser supaya tampilan tetap konsisten.
+        terapkanKonfigurasi(KONFIG_BAWAAN);
+        perbaruiRingkasan(null);
+        tampilkanAlert('success', 'Form dikembalikan ke konfigurasi bawaan',
+          'Perubahan belum tersimpan. Klik <strong>Simpan Konfigurasi</strong> untuk menerapkan.');
+      });
+
+      /* ---------------- Interaksi kecil ---------------- */
+      inputPenyedia.addEventListener('change', function () {
+        isiDaftarModel(inputPenyedia.value);
+        isiEndpointSaran(inputPenyedia.value);
+      });
+
+      function isiEndpointSaran(penyedia) {
+        var saran = {
+          openai: 'https://api.openai.com/v1/chat/completions',
+          gemini: 'https://generativelanguage.googleapis.com/v1beta/models',
+          anthropic: 'https://api.anthropic.com/v1/messages',
+          mistral: 'https://api.mistral.ai/v1/chat/completions',
+          ollama: 'http://localhost:11434/api/generate'
+        }[penyedia];
+        if (saran && !inputEndpoint.value.trim()) inputEndpoint.value = saran;
+      }
+
+      // Bersihkan pesan validasi kustom saat pengguna mengubah input.
+      [inputModel, inputEndpoint, inputApiKey, inputSuhu, inputToken, inputTimeout,
+       inputTinggi, inputSedang, inputUkuran].forEach(function (el) {
+        el.addEventListener('input', function () { el.setCustomValidity(''); });
+      });
+
+      inputAktif.addEventListener('change', function () {
+        var k = bacaJson(localStorage, KUNCI_KONFIG, null);
+        if (k) {
+          k.aktif = inputAktif.checked;
+          k.statusKoneksi = k.statusKoneksi || null;
+          perbaruiRingkasan(k);
+        } else {
+          document.getElementById('statKoneksi').textContent = 'Belum diuji';
+        }
+      });
+
+      muatKonfigurasi();
+    })();
+  </script>
+</body>
+</html>

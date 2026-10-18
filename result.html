@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hasil Analisis &mdash; Deteksi Plagiarisme</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #0d6efd; }
+
+    body {
+      background:
+        radial-gradient(1100px 420px at 10% -10%, #e7f0ff 0%, transparent 60%),
+        radial-gradient(900px 380px at 100% 0%, #eafaf3 0%, transparent 55%),
+        #f4f6fb;
+      min-height: 100vh;
+    }
+
+    .navbar-brand-icon {
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .18);
+      border-radius: .6rem;
+    }
+
+    .card { border: 1px solid rgba(15, 23, 42, .07); border-radius: 1rem; }
+    .card-header { border-radius: 1rem 1rem 0 0 !important; }
+    .min-w-0 { min-width: 0; }
+
+    /* ---------- Donut chart ---------- */
+    .donut-wrap { position: relative; width: 200px; height: 200px; margin: 0 auto; }
+    .donut-wrap svg { transform: rotate(-90deg); display: block; }
+    .donut-seg { transition: stroke-dasharray .6s ease; }
+    .donut-center {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    .donut-center .val { font-size: 2.15rem; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+    .donut-center .lbl { font-size: .72rem; color: #6b7280; text-transform: uppercase; letter-spacing: .06em; }
+
+    .legend { display: flex; flex-direction: column; gap: .55rem; }
+    .legend-item { display: flex; align-items: center; gap: .6rem; font-size: .875rem; }
+    .legend-dot { width: 11px; height: 11px; border-radius: 3px; flex: 0 0 11px; }
+    .legend-value { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+    /* ---------- Info ---------- */
+    .info-row { display: flex; justify-content: space-between; gap: 1rem; padding: .6rem 0; border-bottom: 1px dashed #e5eaf3; }
+    .info-row:last-child { border-bottom: 0; }
+    .info-row .k { color: #6b7280; font-size: .82rem; }
+    .info-row .v { font-weight: 600; font-size: .875rem; text-align: right; overflow-wrap: anywhere; }
+
+    .stat-tile { border: 1px solid #e5eaf3; border-radius: .75rem; padding: .8rem .9rem; height: 100%; }
+    .stat-tile .tile-label { font-size: .72rem; color: #6b7280; text-transform: uppercase; letter-spacing: .03em; }
+    .stat-tile .tile-value { font-weight: 700; font-size: 1.05rem; }
+
+    /* ---------- Temuan ---------- */
+    .match-item { border: 1px solid #e5eaf3; border-radius: .9rem; background: #fff; }
+    .match-item + .match-item { margin-top: .9rem; }
+    .match-item .match-bar { height: 4px; border-radius: .9rem .9rem 0 0; }
+
+    .quote {
+      border-left: 3px solid #dbe3f0;
+      background: #fbfcff;
+      border-radius: 0 .6rem .6rem 0;
+      padding: .8rem 1rem;
+      margin: .75rem 0;
+      font-size: .9rem;
+      line-height: 1.65;
+      color: #33405a;
+    }
+    .quote mark {
+      background: #fff1a8;
+      padding: 1px 2px;
+      border-radius: 3px;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+    }
+
+    .sumber {
+      display: flex; gap: .75rem; align-items: flex-start;
+      border: 1px solid #e9eef6; border-radius: .7rem;
+      padding: .65rem .8rem; background: #fdfefe;
+    }
+    .sumber + .sumber { margin-top: .5rem; }
+    .sumber-icon {
+      width: 34px; height: 34px; flex: 0 0 34px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: .55rem; background: #eef4ff; color: var(--brand); font-size: 1rem;
+    }
+    .sumber-title { font-weight: 600; font-size: .875rem; }
+    .sumber-meta { font-size: .78rem; color: #6b7280; }
+    .sumber-link { font-size: .78rem; overflow-wrap: anywhere; }
+
+    .catatan {
+      font-size: .8rem; color: #8a6d3b; background: #fff8e6;
+      border: 1px solid #f3e2bb; border-radius: .55rem; padding: .4rem .6rem;
+      display: inline-flex; align-items: center; gap: .4rem;
+    }
+
+    footer { color: #7c8698; font-size: .82rem; }
+
+    @media print {
+      body { background: #fff; }
+      .no-print { display: none !important; }
+      .card { border-color: #ccc; box-shadow: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ============ NAVBAR ============ -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm no-print">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold" href="index.html">
+        <span class="navbar-brand-icon"><i class="bi bi-shield-check"></i></span>
+        <span>Deteksi Plagiarisme</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navMain">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
+          <li class="nav-item"><a class="nav-link" href="index.html"><i class="bi bi-house-door me-1"></i>Beranda</a></li>
+          <li class="nav-item"><a class="nav-link" href="upload.html"><i class="bi bi-cloud-arrow-up me-1"></i>Unggah Dokumen</a></li>
+          <li class="nav-item"><a class="nav-link" href="riwayat.html"><i class="bi bi-clock-history me-1"></i>Riwayat</a></li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+              <i class="bi bi-person-circle me-1"></i><span id="navNamaPengguna">Pengguna</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="riwayat.html"><i class="bi bi-clock-history me-2"></i>Riwayat Saya</a></li>
+              <li><a class="dropdown-item" href="login-admin.html"><i class="bi bi-shield-lock me-2"></i>Masuk sebagai Admin</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item text-danger" href="#" id="navLogout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4 py-lg-5">
+
+    <!-- ============ HEADER ============ -->
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+      <div>
+        <a href="upload.html" class="text-decoration-none small text-secondary no-print">
+          <i class="bi bi-arrow-left me-1"></i>Kembali ke Unggah Dokumen
+        </a>
+        <h1 class="h4 fw-bold mb-1 mt-1">Hasil Analisis Plagiarisme</h1>
+        <p class="text-secondary mb-0" id="headerSub">&mdash;</p>
+      </div>
+      <div class="text-lg-end no-print">
+        <div class="d-flex gap-2 justify-content-start justify-content-lg-end flex-wrap">
+          <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
+            <i class="bi bi-printer me-2"></i>Cetak
+          </button>
+          <button type="button" class="btn btn-outline-primary" id="btnUnduh">
+            <i class="bi bi-download me-2"></i>Unduh Laporan
+          </button>
+          <a href="upload.html" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-2"></i>Periksa Dokumen Lain
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ STATUS: MEMUAT / GALAT ============ -->
+    <div class="card shadow-sm mb-4" id="loadingPanel">
+      <div class="card-body text-center py-5">
+        <div class="spinner-border text-primary mb-3" role="status" aria-hidden="true"></div>
+        <p class="mb-0 text-secondary">Memuat hasil analisis dari server&hellip;</p>
+        <p class="mb-0 small text-secondary mt-2"><span id="loadingInfo">&mdash;</span></p>
+      </div>
+    </div>
+
+    <div class="alert alert-danger d-none" id="errorPanel" role="alert" aria-live="polite"></div>
+
+    <div class="row g-4 hasil-bagian d-none">
+      <!-- ============ SKOR + GRAFIK LINGKARAN ============ -->
+      <div class="col-lg-4">
+        <div class="card shadow-sm h-100">
+          <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-pie-chart text-primary me-2"></i>Skor Kemiripan</h2>
+            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning" id="badgeTingkat">
+              &mdash;
+            </span>
+          </div>
+          <div class="card-body">
+            <div class="donut-wrap">
+              <svg viewBox="0 0 140 140" width="200" height="200" role="img"
+                   aria-label="Grafik lingkaran skor kemiripan dokumen">
+                <circle cx="70" cy="70" r="54" fill="none" stroke="#e9eef6" stroke-width="16"></circle>
+                <g id="donutSegs"></g>
+              </svg>
+              <div class="donut-center">
+                <span class="val" id="skorValue">0%</span>
+                <span class="lbl">Kemiripan</span>
+              </div>
+            </div>
+
+            <hr class="my-4">
+
+            <div class="legend" id="legendList"></div>
+
+            <div class="alert alert-light border small text-secondary mt-4 mb-0">
+              <i class="bi bi-info-circle me-1"></i>
+              Skor <strong id="teksTingkat">sedang</strong> dihitung dari perbandingan teks dokumen
+              terhadap sumber acuan yang terdeteksi.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ INFORMASI DOKUMEN ============ -->
+      <div class="col-lg-8">
+        <div class="card shadow-sm h-100">
+          <div class="card-header bg-white py-3">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-file-earmark-text text-primary me-2"></i>Informasi Dokumen</h2>
+          </div>
+          <div class="card-body">
+            <div class="info-row">
+              <span class="k">Judul</span>
+              <span class="v" id="infoJudul">&mdash;</span>
+            </div>
+            <div class="info-row">
+              <span class="k">Nama Mahasiswa</span>
+              <span class="v" id="infoNama">&mdash;</span>
+            </div>
+            <div class="info-row">
+              <span class="k">NIM</span>
+              <span class="v" id="infoNim">&mdash;</span>
+            </div>
+            <div class="info-row">
+              <span class="k">Jenis Dokumen</span>
+              <span class="v" id="infoJenis">&mdash;</span>
+            </div>
+            <div class="info-row">
+              <span class="k">Berkas</span>
+              <span class="v" id="infoBerkas">&mdash;</span>
+            </div>
+            <div class="info-row">
+              <span class="k">Waktu Pemeriksaan</span>
+              <span class="v" id="infoWaktu">&mdash;</span>
+            </div>
+
+            <div class="row g-3 mt-3">
+              <div class="col-6 col-md-3">
+                <div class="stat-tile">
+                  <div class="tile-label">ID Hasil</div>
+                  <div class="tile-value" id="statId" style="font-size:.82rem; overflow-wrap:anywhere">&mdash;</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="stat-tile">
+                  <div class="tile-label">Ukuran Berkas</div>
+                  <div class="tile-value" id="statUkuran">0</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="stat-tile">
+                  <div class="tile-label">Temuan</div>
+                  <div class="tile-value" id="statTemuan">0</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="stat-tile">
+                  <div class="tile-label">Struktur</div>
+                  <div class="tile-value text-success" id="statStruktur">&mdash;</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ STRUKTUR DOKUMEN ============ -->
+    <section class="mt-4 hasil-bagian d-none">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <h2 class="h6 fw-bold mb-0">
+            <i class="bi bi-list-check text-primary me-2"></i>Struktur Dokumen
+          </h2>
+          <span class="badge bg-secondary-subtle text-secondary-emphasis border" id="badgeStruktur">&mdash;</span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th scope="col" class="ps-3" style="width:60%">Bagian Dokumen</th>
+                  <th scope="col" class="text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody id="tabelStruktur"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ DAFTAR TEMUAN ============ -->
+    <section class="mt-4 hasil-bagian d-none">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <h2 class="h6 fw-bold mb-0">
+            <i class="bi bi-list-ul text-primary me-2"></i>Bagian Teks Terindikasi Plagiat
+          </h2>
+          <div class="d-flex align-items-center gap-2 no-print">
+            <label for="urutkan" class="small text-secondary mb-0">Urutkan</label>
+            <select class="form-select form-select-sm" id="urutkan" style="width: auto;">
+              <option value="desc" selected>Kemiripan tertinggi</option>
+              <option value="asc">Kemiripan terendah</option>
+              <option value="asli">Urutan asli dari server</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card-body p-3 p-md-4">
+          <div id="daftarTemuan"></div>
+
+          <div class="alert alert-light border mt-4 mb-0 small text-secondary d-none" id="alertMesin"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-center mt-5">
+      <p class="mb-0">&copy; 2026 &middot; Aplikasi Deteksi Plagiarisme Proposal &amp; Laporan Tugas Akhir Menggunakan AI</p>
+    </footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      /* ==================================================================
+       * SESI PENGGUNA
+       * Sesi diisi oleh login.html. Guard bersifat "fail-open": bila
+       * storage diblokir browser, halaman tetap bisa dibuka (mode tamu).
+       * ================================================================== */
+      var KUNCI_SESI = 'sesiPengguna';
+      var WAJIB_LOGIN = true;
+
+      function storageTersedia(storage) {
+        try {
+          storage.setItem('__uji', '1');
+          storage.removeItem('__uji');
+          return true;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function bacaJson(storage, kunci, bawaan) {
+        try {
+          var raw = storage.getItem(kunci);
+          return raw ? JSON.parse(raw) : bawaan;
+        } catch (err) {
+          return bawaan;
+        }
+      }
+
+      var sesi = bacaJson(sessionStorage, KUNCI_SESI, null);
+
+      if (WAJIB_LOGIN && !sesi && storageTersedia(sessionStorage)) {
+        window.location.replace('login.html?next=' +
+          encodeURIComponent('result.html' + window.location.search));
+        return;
+      }
+
+      if (!sesi) sesi = { nama: 'Tamu', email: '' };
+
+      var navNama = document.getElementById('navNamaPengguna');
+      navNama.textContent = sesi.nama || 'Pengguna';
+      if (sesi.email) navNama.title = sesi.email;
+
+      document.getElementById('navLogout').addEventListener('click', function (e) {
+        e.preventDefault();
+        try { sessionStorage.removeItem(KUNCI_SESI); } catch (err) { /* diabaikan */ }
+        window.location.href = 'login.html';
+      });
+
+      /* ==================================================================
+       * KONFIGURASI BACKEND — GET /api/results/:id
+       *
+       * Bila halaman disajikan oleh server yang sama (protokol http/https),
+       * origin dipakai langsung sehingga port mengikuti server; bila dibuka
+       * dari berkas lokal (file://), backend diakses pada
+       * http://localhost:3000 sesuai spesifikasi API.
+       * ================================================================== */
+      var API_BASE = (function () {
+        if (/^https?:$/.test(window.location.protocol) && window.location.host) {
+          return window.location.protocol + '//' + window.location.host;
+        }
+        return 'http://localhost:3000';
+      })();
+      var TIMEOUT_MS = 60000;
+      var EM = '\u2014';                       // em dash untuk nilai kosong
+
+      /* ====== elemen ====== */
+      var loadingPanel    = document.getElementById('loadingPanel');
+      var loadingInfo     = document.getElementById('loadingInfo');
+      var errorPanel      = document.getElementById('errorPanel');
+      var bagianHasil     = Array.prototype.slice.call(document.querySelectorAll('.hasil-bagian'));
+      var elTabelStruktur = document.getElementById('tabelStruktur');
+      var elBadgeStruktur = document.getElementById('badgeStruktur');
+      var elTemuan        = document.getElementById('daftarTemuan');
+      var elMesin         = document.getElementById('alertMesin');
+      var elUrutkan       = document.getElementById('urutkan');
+
+      /* ================= util ================= */
+      function esc(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      /** Membaca parameter dari query string, mis. ?id=PLG-20261018-ABCD1234 */
+      function ambilParam(nama) {
+        var cocok = new RegExp('[?&]' + nama + '=([^&#]*)').exec(window.location.search || '');
+        return cocok ? decodeURIComponent(cocok[1].replace(/\+/g, ' ')) : '';
+      }
+
+      function formatWaktu(iso) {
+        if (!iso) return EM;
+        var t = new Date(iso);
+        if (isNaN(t.getTime())) return String(iso);
+        try {
+          return t.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) +
+                 ', ' + t.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        } catch (err) {
+          return t.toISOString();
+        }
+      }
+
+      /** Klasifikasi lokal (ambang sama dengan server.js) bila server tidak mengirimkannya. */
+      function klasifikasiDariSkor(skor) {
+        if (skor >= 50) return 'Tinggi';
+        if (skor >= 20) return 'Sedang';
+        return 'Rendah';
+      }
+
+      /** Gaya badge mengikuti classification_level dari server (Rendah/Sedang/Tinggi). */
+      function gayaTingkat(level, skor) {
+        var l = String(level || '').trim().toLowerCase();
+        var kunci = l.indexOf('tinggi') !== -1 ? 'tinggi'
+                  : l.indexOf('sedang') !== -1 ? 'sedang'
+                  : l.indexOf('rendah') !== -1 ? 'rendah'
+                  : klasifikasiDariSkor(Number(skor) || 0).toLowerCase();
+
+        if (kunci === 'tinggi') {
+          return { nama: 'Tinggi', label: 'Indikasi Tinggi', warna: '#dc3545',
+                   cls: 'bg-danger-subtle text-danger-emphasis border border-danger' };
+        }
+        if (kunci === 'sedang') {
+          return { nama: 'Sedang', label: 'Indikasi Sedang', warna: '#ffc107',
+                   cls: 'bg-warning-subtle text-warning-emphasis border border-warning' };
+        }
+        return { nama: 'Rendah', label: 'Indikasi Rendah', warna: '#198754',
+                 cls: 'bg-success-subtle text-success-emphasis border border-success' };
+      }
+
+      function warnaKemiripan(p) {
+        if (p >= 50) return 'danger';
+        if (p >= 20) return 'warning';
+        return 'success';
+      }
+
+      /* ================= status: memuat / galat ================= */
+      function tampilkanKonten() {
+        loadingPanel.classList.add('d-none');
+        errorPanel.classList.add('d-none');
+        bagianHasil.forEach(function (el) { el.classList.remove('d-none'); });
+      }
+
+      function tampilkanError(pesanHtml) {
+        loadingPanel.classList.add('d-none');
+        bagianHasil.forEach(function (el) { el.classList.add('d-none'); });
+
+        errorPanel.classList.remove('d-none');
+        errorPanel.innerHTML =
+          '<div class="d-flex gap-3">' +
+            '<i class="bi bi-exclamation-triangle-fill fs-4"></i>' +
+            '<div>' +
+              '<p class="fw-semibold mb-1">Hasil analisis tidak dapat dimuat</p>' +
+              '<p class="mb-3 small">' + pesanHtml + '</p>' +
+              '<div class="d-flex flex-wrap gap-2">' +
+                '<button type="button" class="btn btn-sm btn-outline-danger" id="btnCobaLagi">' +
+                  '<i class="bi bi-arrow-clockwise me-1"></i>Coba Lagi</button>' +
+                '<a class="btn btn-sm btn-outline-secondary" href="upload.html">' +
+                  '<i class="bi bi-cloud-arrow-up me-1"></i>Unggah Dokumen</a>' +
+                '<a class="btn btn-sm btn-outline-secondary" href="riwayat.html">' +
+                  '<i class="bi bi-clock-history me-1"></i>Riwayat</a>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+
+        var tombol = document.getElementById('btnCobaLagi');
+        if (tombol) {
+          tombol.addEventListener('click', function () { window.location.reload(); });
+        }
+      }
+
+      /* ================= pengambilan data: GET /api/results/:id ============ */
+      function ambilHasil(id) {
+        var pengendali = window.AbortController ? new AbortController() : null;
+        var jamPasir = window.setTimeout(function () {
+          if (pengendali) pengendali.abort();
+        }, TIMEOUT_MS);
+
+        function selesai() { window.clearTimeout(jamPasir); }
+
+        return fetch(API_BASE + '/api/results/' + encodeURIComponent(id), {
+          headers: { 'Accept': 'application/json' },
+          signal: pengendali ? pengendali.signal : undefined
+        }).then(function (res) {
+          return res.text().then(function (teks) {
+            selesai();
+
+            var data = null;
+            try { data = teks ? JSON.parse(teks) : null; } catch (err) { data = null; }
+
+            if (!res.ok) {
+              var err = new Error(
+                (data && (data.message || data.error)) ||
+                ('Server membalas HTTP ' + res.status + ' tanpa keterangan.')
+              );
+              err.status = res.status;
+              throw err;
+            }
+            if (!data) {
+              throw new Error('Respons server tidak dapat dibaca sebagai JSON.');
+            }
+            return data;
+          });
+        }, function (err) {
+          selesai();
+          if (err && err.name === 'AbortError') {
+            var habis = new Error('Permintaan melebihi batas waktu ' + (TIMEOUT_MS / 1000) + ' detik.');
+            habis.timeout = true;
+            throw habis;
+          }
+          var jaringan = new Error('Koneksi ke server gagal (server belum dijalankan atau diblokir CORS).');
+          jaringan.network = true;
+          throw jaringan;
+        });
+      }
+
+      /* ================= normalisasi respons backend ================= */
+      function normalisasi(rec) {
+        var meta   = rec.document_metadata || {};
+        var berkas = rec.berkas || {};
+
+        var skor = Number(rec.overall_similarity_score);
+        if (isNaN(skor)) skor = 0;
+
+        // structure_analysis: { 'Cover': true, 'Bab I Pendahuluan': true, ... }
+        var struktur = [];
+        if (rec.structure_analysis && typeof rec.structure_analysis === 'object') {
+          Object.keys(rec.structure_analysis).forEach(function (nama) {
+            struktur.push({ nama: nama, ada: rec.structure_analysis[nama] === true });
+          });
+        }
+
+        // flagged_passages: [{ text, similarity_percentage, source_reference }]
+        var temuan = (Array.isArray(rec.flagged_passages) ? rec.flagged_passages : [])
+          .map(function (p) {
+            var persen = Number(p && p.similarity_percentage);
+            return {
+              persentase: isNaN(persen) ? 0 : persen,
+              teks: (p && p.text) || '',
+              referensi: (p && p.source_reference) || ''
+            };
+          });
+
+        return {
+          id: rec.id || '',
+          skor: skor,
+          klasifikasi: rec.classification_level || klasifikasiDariSkor(skor),
+          mesin: rec.analysis_engine || '',
+          waktu: formatWaktu(rec.created_at),
+          dokumen: {
+            judul: meta.judul || EM,
+            nim: meta.nim || EM,
+            nama: meta.nama || EM,
+            jenis: meta.jenis_dokumen || EM,
+            berkas: berkas.nama_asli || EM,
+            ukuran: berkas.ukuran || EM
+          },
+          struktur: struktur,
+          temuan: temuan
+        };
+      }
+
+      /* ================= render ================= */
+      var MODEL = null;
+
+      function kartuTemuan(item, index) {
+        var w = warnaKemiripan(item.persentase);
+
+        var refHtml = item.referensi
+          ? '<div class="sumber">' +
+              '<span class="sumber-icon"><i class="bi bi-link-45deg"></i></span>' +
+              '<div class="flex-grow-1 min-w-0">' +
+                '<div class="sumber-title">' + esc(item.referensi) + '</div>' +
+                '<div class="sumber-meta">Referensi sumber dari mesin analisis</div>' +
+              '</div>' +
+            '</div>'
+          : '<div class="text-secondary small fst-italic">' +
+              'Referensi sumber tidak disertakan pada temuan ini.</div>';
+
+        return '' +
+          '<article class="match-item">' +
+            '<div class="match-bar bg-' + w + '" style="opacity:.75"></div>' +
+            '<div class="p-3 p-md-4">' +
+              '<div class="d-flex flex-wrap justify-content-between align-items-start gap-2">' +
+                '<div class="d-flex flex-wrap align-items-center gap-2">' +
+                  '<span class="badge bg-secondary-subtle text-secondary-emphasis border">Bagian #' + (index + 1) + '</span>' +
+                '</div>' +
+                '<span class="badge bg-' + w + ' fs-6">' + item.persentase + '% kemiripan</span>' +
+              '</div>' +
+
+              '<div class="progress mt-3" style="height:6px;" role="progressbar" ' +
+                   'aria-label="Kemiripan bagian ini" aria-valuenow="' + item.persentase + '" ' +
+                   'aria-valuemin="0" aria-valuemax="100">' +
+                '<div class="progress-bar bg-' + w + '" style="width:' + item.persentase + '%"></div>' +
+              '</div>' +
+
+              '<blockquote class="quote mb-2">' + esc(item.teks) + '</blockquote>' +
+
+              '<h3 class="h6 fw-bold mt-3 mb-2 small text-uppercase text-secondary" style="letter-spacing:.04em">' +
+                '<i class="bi bi-link-45deg me-1"></i>Referensi Sumber</h3>' +
+              refHtml +
+            '</div>' +
+          '</article>';
+      }
+
+      function renderTemuan(mode) {
+        if (!MODEL) return;
+
+        var data = MODEL.temuan.slice();
+        if (mode === 'desc') data.sort(function (a, b) { return b.persentase - a.persentase; });
+        if (mode === 'asc') data.sort(function (a, b) { return a.persentase - b.persentase; });
+        // mode 'asli' -> urutan sesuai respons server
+
+        if (!data.length) {
+          elTemuan.innerHTML =
+            '<div class="alert alert-success border-success-subtle small mb-0">' +
+              '<i class="bi bi-check2-circle me-1"></i>' +
+              'Tidak ada bagian teks yang terindikasi plagiat pada hasil ini.' +
+            '</div>';
+          return;
+        }
+
+        elTemuan.innerHTML = data.map(kartuTemuan).join('');
+      }
+
+      function render(model) {
+        MODEL = model;
+        var t = gayaTingkat(model.klasifikasi, model.skor);
+        var d = model.dokumen;
+
+        document.title = 'Hasil ' + (model.id || '') + ' \u2014 Deteksi Plagiarisme';
+
+        /* ---- header ---- */
+        document.getElementById('headerSub').innerHTML =
+          esc(d.jenis) + ' &middot; ' + esc(d.nim) +
+          (d.nama !== EM ? ' &middot; ' + esc(d.nama) : '') +
+          ' &middot; diperiksa ' + esc(model.waktu);
+
+        /* ---- informasi dokumen ---- */
+        document.getElementById('infoJudul').textContent = d.judul;
+        document.getElementById('infoNama').textContent = d.nama;
+        document.getElementById('infoNim').textContent = d.nim;
+        document.getElementById('infoJenis').textContent = d.jenis;
+        document.getElementById('infoBerkas').textContent =
+          d.berkas === EM ? EM : d.berkas + (d.ukuran !== EM ? ' (' + d.ukuran + ')' : '');
+        document.getElementById('infoWaktu').textContent = model.waktu;
+        document.getElementById('statId').textContent = model.id || EM;
+        document.getElementById('statUkuran').textContent = d.ukuran;
+        document.getElementById('statTemuan').textContent = model.temuan.length;
+
+        var jmlAda = model.struktur.filter(function (b) { return b.ada; }).length;
+        var elStatStruktur = document.getElementById('statStruktur');
+        if (model.struktur.length) {
+          elStatStruktur.textContent = jmlAda + '/' + model.struktur.length;
+          elStatStruktur.className = 'tile-value ' +
+            (jmlAda === model.struktur.length ? 'text-success' : (jmlAda ? 'text-warning' : 'text-danger'));
+        } else {
+          elStatStruktur.textContent = EM;
+          elStatStruktur.className = 'tile-value text-secondary';
+        }
+
+        /* ---- donut: skor total + bagian orisinal ---- */
+        var R = 54;
+        var C = 2 * Math.PI * R;
+        var segsEl = document.getElementById('donutSegs');
+        segsEl.innerHTML = '';
+
+        var irisan = [
+          { label: 'Teks terindikasi plagiat', nilai: model.skor, warna: t.warna },
+          { label: 'Bagian orisinal', nilai: Math.max(0, 100 - model.skor), warna: '#e9eef6' }
+        ];
+
+        var offset = 0;
+        irisan.forEach(function (item) {
+          var frac = item.nilai / 100;
+          var seg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          seg.setAttribute('cx', '70');
+          seg.setAttribute('cy', '70');
+          seg.setAttribute('r', String(R));
+          seg.setAttribute('fill', 'none');
+          seg.setAttribute('stroke', item.warna);
+          seg.setAttribute('stroke-width', '16');
+          seg.setAttribute('stroke-linecap', 'butt');
+          seg.setAttribute('class', 'donut-seg');
+          seg.setAttribute('stroke-dasharray', (frac * C) + ' ' + C);
+          seg.setAttribute('stroke-dashoffset', String(-offset * C));
+          seg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'title'))
+             .textContent = item.label + ': ' + item.nilai + '%';
+          segsEl.appendChild(seg);
+          offset += frac;
+        });
+
+        document.getElementById('skorValue').textContent = model.skor + '%';
+        document.getElementById('skorValue').style.color = t.warna;
+
+        var legendList = document.getElementById('legendList');
+        legendList.innerHTML = '';
+        irisan.forEach(function (item) {
+          var row = document.createElement('div');
+          row.className = 'legend-item' + (item.warna === '#e9eef6' ? ' text-secondary' : '');
+          row.innerHTML =
+            '<span class="legend-dot" style="background:' + esc(item.warna) + '"></span>' +
+            '<span>' + esc(item.label) + '</span>' +
+            '<span class="legend-value">' + item.nilai + '%</span>';
+          legendList.appendChild(row);
+        });
+
+        var badge = document.getElementById('badgeTingkat');
+        badge.className = 'badge ' + t.cls;
+        badge.textContent = t.label;
+        document.getElementById('teksTingkat').textContent = t.nama.toLowerCase();
+
+        /* ---- tabel struktur dokumen ---- */
+        elBadgeStruktur.textContent = model.struktur.length
+          ? (jmlAda + ' dari ' + model.struktur.length + ' bagian terdeteksi')
+          : 'Tidak tersedia';
+
+        elTabelStruktur.innerHTML = model.struktur.length
+          ? model.struktur.map(function (b) {
+              return '<tr>' +
+                '<td class="ps-3">' + esc(b.nama) + '</td>' +
+                '<td class="text-center">' +
+                  (b.ada
+                    ? '<span class="badge bg-success-subtle text-success-emphasis border border-success">' +
+                        '<i class="bi bi-check-lg me-1"></i>Terdeteksi</span>'
+                    : '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger">' +
+                        '<i class="bi bi-x-lg me-1"></i>Tidak terdeteksi</span>') +
+                '</td>' +
+              '</tr>';
+            }).join('')
+          : '<tr><td colspan="2" class="ps-3 py-4 text-center text-secondary">' +
+              'Data struktur dokumen tidak tersedia pada hasil ini.</td></tr>';
+
+        /* ---- daftar temuan ---- */
+        renderTemuan(elUrutkan.value || 'desc');
+
+        /* ---- catatan mesin analisis ---- */
+        if (elMesin) {
+          var simulasi = /simulasi|mock/i.test(model.mesin);
+          elMesin.className = 'alert mt-4 mb-0 small ' +
+            (simulasi ? 'alert-warning border-warning-subtle' : 'alert-light border text-secondary');
+          elMesin.innerHTML =
+            '<i class="bi bi-info-circle me-1"></i>Hasil ini dihasilkan oleh mesin analisis ' +
+            '<strong>' + esc(model.mesin || 'tidak diketahui') + '</strong>' +
+            ' &middot; ID <code>' + esc(model.id || EM) + '</code>' +
+            (simulasi
+              ? ' &middot; <strong>Mesin ini masih mengembalikan data simulasi, bukan hasil analisis LLM sebenarnya.</strong>'
+              : '');
+        }
+
+        tampilkanKonten();
+      }
+
+      /* ================= filter urutan temuan ================= */
+      elUrutkan.addEventListener('change', function () {
+        renderTemuan(this.value);
+      });
+
+      /* ================= aksi ================= */
+      document.getElementById('btnUnduh').addEventListener('click', function () {
+        // Cetak ke PDF. Untuk berkas laporan yang dihasilkan server, ganti dengan:
+        //   window.location.href = API_BASE + '/api/results/' + MODEL.id + '/report.pdf';
+        window.print();
+      });
+
+      /* ==================================================================
+       * MULAI
+       * 1. Ambil parameter id dari query string (?id=PLG-YYYYMMDD-XXXXXXXX)
+       * 2. GET /api/results/:id
+       * 3. Render skor, klasifikasi, struktur dokumen, dan temuan
+       * ================================================================== */
+      var hasilId = ambilParam('id');
+
+      if (!hasilId) {
+        // Kompatibilitas: riwayat.html menyimpan hasil terakhir di sessionStorage.
+        var tersimpan = bacaJson(sessionStorage, 'hasilAnalisis', null);
+        if (tersimpan && tersimpan.id) hasilId = String(tersimpan.id);
+      }
+
+      if (!hasilId) {
+        tampilkanError('Parameter <code>id</code> hasil analisis tidak ditemukan pada URL. ' +
+          'Buka halaman ini lewat tombol <em>Lihat Hasil</em> pada riwayat, ' +
+          'atau unggah dokumen terlebih dahulu.');
+        return;
+      }
+
+      loadingInfo.textContent = 'GET ' + API_BASE + '/api/results/' + hasilId;
+
+      ambilHasil(hasilId)
+        .then(function (rec) {
+          render(normalisasi(rec));
+        })
+        .catch(function (err) {
+          var pesan;
+
+          if (err && err.status === 404) {
+            pesan = 'Hasil analisis dengan ID <code>' + esc(hasilId) + '</code> tidak ditemukan di server ' +
+                    '(HTTP 404). Kemungkinan data sudah dihapus.';
+          } else if (err && err.status) {
+            pesan = 'Server membalas HTTP ' + err.status + ': ' + esc(err.message);
+          } else if (err && err.network) {
+            pesan = 'Tidak dapat menghubungi backend di <code>' + esc(API_BASE) + '</code>. ' +
+                    esc(err.message) + ' Pastikan server berjalan (<code>npm start</code>).';
+          } else {
+            pesan = esc(err && err.message ? err.message : String(err));
+          }
+
+          tampilkanError(pesan);
+          console.error('[result] gagal memuat hasil:', err);
+        });
+    })();
+  </script>
+</body>
+</html>

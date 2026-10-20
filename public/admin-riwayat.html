@@ -164,16 +164,15 @@
         </div>
         <p class="small text-secondary mb-0 mt-3">
           <i class="bi bi-info-circle me-1"></i>
-          Ambang batas prototipe: rendah &lt; 20%, sedang 20&ndash;49%, tinggi &ge; 50%.
+          <span id="infoAmbang">Ambang batas aktif: rendah &lt; 20%, sedang 20&ndash;49%, tinggi &ge; 50%.</span>
         </p>
       </div>
     </div>
 
-    <!-- ============ PERINGATAN DATA CONTOH ============ -->
-    <div class="alert alert-warning border d-none align-items-center gap-2 py-2 small" id="alertContoh" role="alert">
+    <!-- ============ KETERANGAN SUMBER / FILTER ============ -->
+    <div class="alert alert-info border d-none align-items-center gap-2 py-2 small" id="alertContoh" role="alert">
       <i class="bi bi-info-circle me-1"></i>
-      Belum ada riwayat pemeriksaan yang tersimpan pada perangkat ini, sehingga tabel menampilkan
-      <strong>data contoh</strong> untuk keperluan demonstrasi.
+      Menampilkan riwayat pemeriksaan yang tersimpan pada server.
     </div>
 
     <!-- ============ DAFTAR RIWAYAT ============ -->
@@ -222,8 +221,8 @@
             <div>
               <div class="fw-semibold">Data riwayat gagal diambil</div>
               <div class="small mb-2">
-                Sistem tidak dapat mengambil riwayat pemeriksaan. Periksa koneksi ke basis data
-                lalu muat ulang halaman.
+                Sistem tidak dapat mengambil riwayat pemeriksaan dari server.
+                <span id="sebabGagal">Periksa koneksi ke server lalu muat ulang halaman.</span>
               </div>
               <button type="button" class="btn btn-sm btn-danger" id="btnMuatUlang">
                 <i class="bi bi-arrow-clockwise me-1"></i>Muat Ulang
@@ -304,6 +303,8 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Helper bersama: alamat API, sesi, token Bearer, dan pemanggilan API nyata. -->
+  <script src="js/ippl-api.js"></script>
   <script>
     (function () {
       'use strict';
@@ -322,40 +323,17 @@
        *   1. Tidak ada riwayat -> tampilkan informasi riwayat belum tersedia.
        *   2. Data riwayat gagal diambil -> tampilkan pesan kesalahan.
        *
-       * [API] ganti bacaData() dengan GET /api/admin/histories
+       * Seluruh data pada halaman ini berasal dari backend nyata:
+       *   GET /api/admin/histories  (daftar riwayat + ringkasan klasifikasi)
+       *   GET /api/health           (ambang klasifikasi dari panel Pengaturan AI)
+       * Sesi Administrator ditangani berkas bersama js/ippl-api.js.
        * ================================================================== */
-
-      var KUNCI_SESI_ADMIN = 'sesiAdmin';
-      var KUNCI_RIWAYAT    = 'riwayatPemeriksaan';
-      var KUNCI_HASIL      = 'hasilAnalisis';
-
-      // Guard admin. Set false bila ingin halaman bisa dibuka tanpa autentikasi Admin.
-      var WAJIB_LOGIN_ADMIN = true;
 
       /* ---------------- Util ---------------- */
       function esc(s) {
         return String(s == null ? '' : s)
           .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      }
-
-      function bacaJson(storage, kunci, bawaan) {
-        try {
-          var raw = storage.getItem(kunci);
-          return raw ? JSON.parse(raw) : bawaan;
-        } catch (err) {
-          return bawaan;
-        }
-      }
-
-      function storageTersedia(storage) {
-        try {
-          storage.setItem('__uji', '1');
-          storage.removeItem('__uji');
-          return true;
-        } catch (err) {
-          return false;
-        }
       }
 
       function tanggalRingkas(iso) {
@@ -369,120 +347,178 @@
         }
       }
 
-      function tingkat(skor) {
-        if (skor >= 50) return { kunci: 'tinggi', label: 'Tinggi', cls: 'bg-danger-subtle text-danger-emphasis border border-danger' };
-        if (skor >= 20) return { kunci: 'sedang', label: 'Sedang', cls: 'bg-warning-subtle text-warning-emphasis border border-warning' };
-        return { kunci: 'rendah', label: 'Rendah', cls: 'bg-success-subtle text-success-emphasis border border-success' };
+      /** Membaca satu parameter dari query string halaman ini. */
+      function parameterUrl(nama) {
+        var cocok = new RegExp('[?&]' + nama + '=([^&]*)').exec(window.location.search || '');
+        if (!cocok) return '';
+        try { return decodeURIComponent(cocok[1].replace(/\+/g, ' ')); } catch (err) { return cocok[1]; }
       }
 
       /* ---------------- Sesi admin & guard ---------------- */
-      var sesi = bacaJson(sessionStorage, KUNCI_SESI_ADMIN, null);
-
-      if (WAJIB_LOGIN_ADMIN && !sesi && storageTersedia(sessionStorage)) {
-        window.location.replace('login-admin.html?next=admin-riwayat.html');
-        return;
-      }
+      // Halaman ini hanya untuk Administrator. IPPL.wajibMasuk() mengarahkan ke
+      // login-admin.html?next=... bila belum masuk atau sesinya bukan Administrator.
+      var sesi = IPPL.wajibMasuk({ peran: 'Administrator' });
+      if (!sesi) return; // sudah dialihkan ke halaman masuk
 
       var navNama = document.getElementById('navNamaAdmin');
-      navNama.textContent = (sesi && sesi.nama) ? sesi.nama : 'Admin';
-      if (sesi && sesi.email) navNama.title = sesi.email + ' \u00b7 ' + (sesi.peran || 'Administrator');
+      navNama.textContent = sesi.nama ? sesi.nama : 'Admin';
+      if (sesi.email) navNama.title = sesi.email + ' \u00b7 ' + (sesi.peran || 'Administrator');
 
       document.getElementById('navLogout').addEventListener('click', function (e) {
         e.preventDefault();
-        try { sessionStorage.removeItem(KUNCI_SESI_ADMIN); } catch (err) { /* diabaikan */ }
-        window.location.href = 'login-admin.html';
+        IPPL.keluar('login-admin.html');
       });
 
-      /* ---------------- Data contoh (fallback demo) ---------------- */
-      var TEKS_TEMUAN = 'Sistem informasi adalah suatu sistem di dalam suatu organisasi yang mempertemukan ' +
-        'kebutuhan pengolahan transaksi harian yang mendukung fungsi operasi organisasi yang bersifat ' +
-        'manajerial dengan kegiatan strategi dari suatu organisasi untuk dapat menyediakan laporan-laporan ' +
-        'yang diperlukan oleh pihak luar tertentu.';
-      var SOROT_TEMUAN = 'suatu sistem di dalam suatu organisasi yang mempertemukan kebutuhan pengolahan transaksi harian';
+      /* ---------------- Ambang klasifikasi (mengikuti panel Admin) ---------------- */
+      // Nilai awalnya mengikuti bawaan server; diperbarui dari GET /api/health
+      // supaya tabel, filter, dan grafik sejalan dengan panel "Pengaturan AI".
+      var ambang = { tinggi: 50, sedang: 20 };
 
-      // Membentuk objek hasil dengan struktur yang sama seperti result.html.
-      function buatContoh(o) {
-        var internet = Math.round(o.skor * 0.55);
-        var jurnal = Math.round(o.skor * 0.32);
-        var halaman = o.halaman || 30;
-        var waktu = o.waktu;
+      function tingkat(skor) {
+        var n = Number(skor) || 0;
+        if (n >= ambang.tinggi) {
+          return { kunci: 'tinggi', label: 'Tinggi', cls: 'bg-danger-subtle text-danger-emphasis border border-danger' };
+        }
+        if (n >= ambang.sedang) {
+          return { kunci: 'sedang', label: 'Sedang', cls: 'bg-warning-subtle text-warning-emphasis border border-warning' };
+        }
+        return { kunci: 'rendah', label: 'Rendah', cls: 'bg-success-subtle text-success-emphasis border border-success' };
+      }
+
+      /** Menampilkan ambang yang sedang dipakai pada keterangan grafik. */
+      function tulisAmbang() {
+        var info = document.getElementById('infoAmbang');
+        if (!info) return;
+        info.textContent = 'Ambang batas aktif: rendah < ' + ambang.sedang + '%, sedang '
+          + ambang.sedang + '\u2013' + (ambang.tinggi - 1) + '%, tinggi \u2265 ' + ambang.tinggi + '%.';
+      }
+
+      /* ---------------- Pemetaan rekaman server -> bentuk tampilan ---------------- */
+      /**
+       * Menggolongkan temuan menjadi rincian sumber kemiripan. Rekaman hanya
+       * menyimpan rujukan sumber berupa teks bebas, jadi penggolongannya
+       * berdasarkan pola alamat/DOI pada source_reference.
+       */
+      function rincianSumber(temuan) {
+        var internet = 0, jurnal = 0, internal = 0, adaAcuan = false;
+
+        (temuan || []).forEach(function (t) {
+          var bobot = Math.round(Number(t && t.similarity_percentage) || 0);
+          var acuan = String((t && t.source_reference) || '').trim();
+          if (!acuan) { internal += bobot; return; }
+
+          adaAcuan = true;
+          if (/^https?:\/\//i.test(acuan) || /\b[a-z0-9-]+\.(com|net|org|id|ac\.id|co\.id|sch\.id|go\.id)\b/i.test(acuan)) {
+            internet += bobot;
+          } else if (/jurnal|journal|doi|repositor|prosiding|skripsi|tesis/i.test(acuan)) {
+            jurnal += bobot;
+          } else {
+            internal += bobot;
+          }
+        });
+
+        if (!adaAcuan) return [];
+        return [
+          { label: 'Sumber Internet', nilai: internet, warna: '#dc3545' },
+          { label: 'Jurnal / Repositori', nilai: jurnal, warna: '#fd7e14' },
+          { label: 'Dokumen Internal', nilai: internal, warna: '#ffc107' }
+        ];
+      }
+
+      /** Ringkasan struktur dokumen dari structure_analysis milik server. */
+      function ringkasStruktur(struktur) {
+        if (!struktur || typeof struktur !== 'object') return null;
+        var kunci = Object.keys(struktur);
+        if (!kunci.length) return null;
+
+        var terdeteksi = 0;
+        kunci.forEach(function (k) { if (struktur[k] === true) terdeteksi += 1; });
 
         return {
-          id: o.id,
-          arsip: waktu,
-          dokumen: {
-            judul: o.judul,
-            nim: o.nim,
-            jenis: o.jenis,
-            berkas: o.berkas,
-            ukuran: o.ukuran,
-            halaman: halaman,
-            kata: halaman * 230,
-            diperiksa: tanggalRingkas(waktu) + ' WITA'
-          },
-          skor: o.skor,
-          rincian: [
-            { label: 'Sumber Internet',     nilai: internet,                 warna: '#dc3545' },
-            { label: 'Jurnal / Repositori', nilai: jurnal,                   warna: '#fd7e14' },
-            { label: 'Dokumen Internal',    nilai: o.skor - internet - jurnal, warna: '#ffc107' }
-          ],
-          struktur: { status: o.skor >= 50 ? 'Perlu perhatian' : 'Sesuai', terdeteksi: 18, total: 20 },
-          temuan: [
-            {
-              bab: 'BAB II \u2014 Tinjauan Pustaka',
-              halaman: Math.max(2, Math.round(halaman * 0.28)),
-              persentase: Math.min(95, o.skor + 40),
-              teks: TEKS_TEMUAN,
-              sorot: SOROT_TEMUAN,
-              catatan: 'Parafrase tanpa mencantumkan sitasi.',
-              sumber: [
-                {
-                  jenis: 'web',
-                  judul: 'Pengertian Sistem Informasi Menurut Para Ahli',
-                  penulis: 'Sutabri, T.',
-                  tahun: 2019,
-                  kecocokan: Math.min(95, o.skor + 40),
-                  url: 'https://www.example.com/pengertian-sistem-informasi'
-                },
-                {
-                  jenis: 'jurnal',
-                  judul: 'Analisis Penerapan Sistem Informasi Akademik pada Perguruan Tinggi',
-                  penulis: 'Hartono, B. & Rahayu, S.',
-                  tahun: 2021,
-                  kecocokan: Math.max(10, o.skor - 25),
-                  url: 'https://doi.org/10.1234/jsi.2021.011'
-                }
-              ]
-            }
-          ]
+          status: terdeteksi === kunci.length ? 'Lengkap' : 'Perlu perhatian',
+          terdeteksi: terdeteksi,
+          total: kunci.length
         };
       }
 
-      var CONTOH_RIWAYAT = [
-        buatContoh({ id: 'c1', judul: 'Sistem Informasi Monitoring Skripsi Berbasis Web', nim: '11241002', jenis: 'Proposal Tugas Akhir',
-                     berkas: 'proposal-aditiya-kusuma.pdf', ukuran: '2,4 MB', halaman: 38, skor: 34, waktu: '2026-10-01T08:20:00+08:00' }),
-        buatContoh({ id: 'c2', judul: 'Laporan Tugas Akhir: Sistem Informasi Monitoring Skripsi Berbasis Web', nim: '11241002', jenis: 'Laporan Tugas Akhir',
-                     berkas: 'laporan-aditiya-kusuma.docx', ukuran: '5,1 MB', halaman: 86, skor: 58, waktu: '2026-10-12T14:05:00+08:00' }),
-        buatContoh({ id: 'c3', judul: 'Penerapan Metode Simple Additive Weighting pada Sistem Pendukung Keputusan', nim: '11241015', jenis: 'Proposal Tugas Akhir',
-                     berkas: 'proposal-rania.docx', ukuran: '1,8 MB', halaman: 29, skor: 12, waktu: '2026-10-05T11:30:00+08:00' }),
-        buatContoh({ id: 'c4', judul: 'Aplikasi Monitoring Kinerja Karyawan Berbasis Web', nim: '11241027', jenis: 'Laporan Tugas Akhir',
-                     berkas: 'laporan-bagas.pdf', ukuran: '4,3 MB', halaman: 74, skor: 71, waktu: '2026-10-09T16:10:00+08:00' }),
-        buatContoh({ id: 'c5', judul: 'Sistem Pakar Diagnosa Penyakit Tanaman Padi Berbasis Web', nim: '11241015', jenis: 'Laporan Tugas Akhir',
-                     berkas: 'laporan-rania.docx', ukuran: '3,6 MB', halaman: 68, skor: 22, waktu: '2026-10-14T09:05:00+08:00' })
-      ];
+      /** Mengubah satu rekaman /api/admin/histories menjadi objek tampilan. */
+      function dariRekaman(r) {
+        var meta   = (r && r.document_metadata) || {};
+        var berkas = (r && r.berkas) || {};
+        var temuan = Array.isArray(r && r.flagged_passages) ? r.flagged_passages : [];
 
-      /* ---------------- Pengambilan data ---------------- */
-      function bacaData(mode) {
-        if (mode === 'gagal') return { ok: false, daftar: [], contoh: false };
+        return {
+          id: r.id,
+          arsip: r.created_at || null,
+          skor: Math.round(Number(r && r.overall_similarity_score) || 0),
+          engine: r.analysis_engine || null,
+          dokumen: {
+            judul: meta.judul || 'Tanpa judul',
+            nim: String(meta.nim || ''),
+            nama: meta.nama || '',
+            jenis: meta.jenis_dokumen || '',
+            berkas: berkas.nama_asli || '',
+            ukuran: typeof berkas.ukuran_byte === 'number'
+              ? IPPL.formatBytes(berkas.ukuran_byte) : (berkas.ukuran || ''),
+            halaman: null,
+            diperiksa: tanggalRingkas(r && r.created_at)
+          },
+          rincian: rincianSumber(temuan),
+          struktur: ringkasStruktur(r && r.structure_analysis),
+          temuan: temuan.map(function (t) {
+            return {
+              persentase: Math.round(Number(t && t.similarity_percentage) || 0),
+              teks: String((t && t.text) || ''),
+              sumber: String((t && t.source_reference) || '').trim()
+            };
+          })
+        };
+      }
 
-        var riwayat = bacaJson(localStorage, KUNCI_RIWAYAT, []);
-        if (!Array.isArray(riwayat)) riwayat = [];
-        riwayat = riwayat.filter(function (i) {
-          return i && i.dokumen && typeof i.skor === 'number' && isFinite(i.skor);
+      /* ---------------- Pengambilan data (GET /api/admin/histories) ---------------- */
+      var DAFTAR_SERVER   = [];
+      var TOTAL_SERVER    = 0;
+      var RATA_SERVER     = null;
+      var RINGKASAN_SERVER = null;
+      var galatTerakhir   = null;
+      var nimTautan       = parameterUrl('nim');
+
+      /** Membaca riwayat dari server sesuai pencarian & filter yang aktif. */
+      function muatRiwayat() {
+        var mode = selectMode.value;
+
+        // Alat bantu demo: menampilkan keadaan galat / kosong tanpa memanggil server.
+        if (mode === 'gagal' || mode === 'kosong') {
+          galatTerakhir = null;
+          render();
+          return Promise.resolve();
+        }
+
+        var query = { limit: 200, offset: 0 };
+        var kata = inputCari.value.trim();
+        if (kata) query.q = kata;
+        if (filterTingkat.value) query.klasifikasi = filterTingkat.value;
+        if (nimTautan) query.nim = nimTautan;
+
+        tampilkanMemuat();
+
+        return IPPL.minta('/api/admin/histories', { query: query }).then(function (hasil) {
+          galatTerakhir = null;
+
+          DAFTAR_SERVER    = ((hasil && hasil.data) || []).map(dariRekaman);
+          TOTAL_SERVER     = hasil && typeof hasil.total === 'number' ? hasil.total : DAFTAR_SERVER.length;
+          RATA_SERVER      = hasil && typeof hasil.rata_rata_skor === 'number' ? hasil.rata_rata_skor : null;
+          RINGKASAN_SERVER = (hasil && hasil.ringkasan_klasifikasi) || null;
+
+          render();
+        }).catch(function (err) {
+          galatTerakhir = err || new Error('Permintaan data riwayat gagal diproses.');
+          DAFTAR_SERVER = [];
+          TOTAL_SERVER = 0;
+          RATA_SERVER = null;
+          RINGKASAN_SERVER = null;
+          render();
         });
-
-        if (riwayat.length) return { ok: true, daftar: riwayat, contoh: false };
-        return { ok: true, daftar: CONTOH_RIWAYAT, contoh: true };
       }
 
       /* ---------------- Elemen ---------------- */
@@ -506,42 +542,59 @@
         return modalDetail;
       }
 
-      /* ---------------- Render ---------------- */
-      function render() {
-        var mode = selectMode.value;
-        var data = bacaData(mode);
-
+      /* ---------------- Keadaan antarmuka ---------------- */
+      function sembunyikanSemua() {
         alertGagal.classList.add('d-none');
         wrapTabel.classList.add('d-none');
         stateKosong.classList.add('d-none');
         statePencarian.classList.add('d-none');
         alertContoh.classList.add('d-none');
         alertContoh.classList.remove('d-flex');
+      }
 
-        // Exception 2: gagal mengambil data.
-        if (!data.ok) {
-          alertGagal.classList.remove('d-none');
+      function tampilkanMemuat() {
+        sembunyikanSemua();
+        alertContoh.classList.remove('d-none');
+        alertContoh.classList.add('d-flex');
+        alertContoh.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>'
+          + 'Memuat riwayat pemeriksaan dari server\u2026';
+        infoJumlah.textContent = 'Memuat data riwayat\u2026';
+        infoSumber.textContent = 'server';
+      }
+
+      /** Menampilkan pesan galat beserta sebabnya (Exception 2). */
+      function tampilkanGalat(err) {
+        var sebab = document.getElementById('sebabGagal');
+        if (sebab) sebab.textContent = IPPL.pesanGalat(err);
+        alertGagal.classList.remove('d-none');
+      }
+
+      /* ---------------- Render ---------------- */
+      function render() {
+        var mode = selectMode.value;
+
+        sembunyikanSemua();
+
+        // Exception 2: gagal mengambil data (mode demo atau permintaan gagal).
+        if (mode === 'gagal' || galatTerakhir) {
+          tampilkanGalat(galatTerakhir || new Error('Alat bantu demo: kegagalan pengambilan data.'));
           infoJumlah.textContent = 'Data riwayat tidak dapat ditampilkan.';
           infoSumber.textContent = 'gagal dimuat';
           ringkasan([], []);
           return;
         }
 
-        if (data.contoh) {
-          alertContoh.classList.remove('d-none');
-          alertContoh.classList.add('d-flex');
-        }
+        var semua = mode === 'kosong' ? [] : DAFTAR_SERVER;
 
-        // Exception 1 / mode demo: tidak ada riwayat.
-        if (mode === 'kosong' || !data.daftar.length) {
+        // Exception 1: tidak ada riwayat pada sistem.
+        if (!semua.length) {
           stateKosong.classList.remove('d-none');
           infoJumlah.textContent = 'Riwayat pemeriksaan belum tersedia.';
-          infoSumber.textContent = data.contoh ? 'data contoh' : 'penyimpanan lokal';
+          infoSumber.textContent = 'server';
           ringkasan([], []);
           return;
         }
 
-        var semua = data.daftar;
         var cari = inputCari.value.trim().toLowerCase();
         var pilihTingkat = filterTingkat.value;
 
@@ -549,7 +602,8 @@
           var t = tingkat(i.skor);
           if (pilihTingkat && t.kunci !== pilihTingkat) return false;
           if (!cari) return true;
-          return (String(i.dokumen.judul || '') + ' ' + String(i.dokumen.nim || '')).toLowerCase().indexOf(cari) !== -1;
+          return (String(i.dokumen.judul || '') + ' ' + String(i.dokumen.nim || ''))
+            .toLowerCase().indexOf(cari) !== -1;
         });
 
         var modeUrut = selectUrut.value;
@@ -569,7 +623,7 @@
         if (!daftar.length) {
           statePencarian.classList.remove('d-none');
           infoJumlah.textContent = 'Tidak ada riwayat yang sesuai dengan pencarian atau filter.';
-          infoSumber.textContent = data.contoh ? 'data contoh' : 'penyimpanan lokal';
+          infoSumber.textContent = 'server';
           return;
         }
 
@@ -593,8 +647,9 @@
           '</tr>';
         }).join('');
 
-        infoJumlah.textContent = 'Menampilkan ' + daftar.length + ' dari ' + semua.length + ' riwayat.';
-        infoSumber.textContent = data.contoh ? 'data contoh' : 'penyimpanan lokal';
+        infoJumlah.textContent = 'Menampilkan ' + daftar.length + ' dari ' + TOTAL_SERVER + ' riwayat'
+          + (nimTautan ? ' untuk NIM ' + nimTautan : '') + '.';
+        infoSumber.textContent = 'server \u00b7 /api/admin/histories';
       }
 
       function ringkasan(semua, tampil) {
@@ -613,8 +668,10 @@
         var judulUnik = {};
         tampil.forEach(function (i) { judulUnik[String(i.dokumen.judul)] = true; });
 
-        document.getElementById('statTotal').textContent = String(semua.length);
-        document.getElementById('statRata').textContent = total ? (rata + '%') : '\u2014';
+        document.getElementById('statTotal').textContent =
+          String(selectMode.value === 'kosong' ? 0 : (TOTAL_SERVER || semua.length));
+        document.getElementById('statRata').textContent = total ? (rata + '%')
+          : (RATA_SERVER != null ? Math.round(RATA_SERVER) + '%' : '\u2014');
         document.getElementById('statTinggi').textContent = String(tinggi);
         document.getElementById('statDokumen').textContent = String(Object.keys(judulUnik).length);
 
@@ -625,10 +682,23 @@
         document.getElementById('valRendah').textContent = String(rendah);
         document.getElementById('valSedang').textContent = String(sedang);
         document.getElementById('valTinggi').textContent = String(tinggi);
+
+        // Ringkasan dari server dipakai bila tabel sedang kosong karena filter.
+        if (!total && RINGKASAN_SERVER) {
+          document.getElementById('statRata').textContent = RATA_SERVER != null
+            ? Math.round(RATA_SERVER) + '%' : '\u2014';
+          document.getElementById('statTinggi').textContent =
+            String(RINGKASAN_SERVER.Tinggi || 0);
+        }
       }
 
       /* ---------------- Detail riwayat (langkah 4-5) ---------------- */
       var detailSekarang = null;
+
+      function barisDetail(kunci, nilai) {
+        return '<div class="detail-row"><span class="k">' + esc(kunci)
+          + '</span><span class="v">' + nilai + '</span></div>';
+      }
 
       function bukaDetail(idx) {
         var i = daftarTampil[idx];
@@ -638,72 +708,64 @@
         var t = tingkat(i.skor);
 
         var rincian = (i.rincian || []).map(function (r) {
-          return '<div class="detail-row"><span class="k">' + esc(r.label) + '</span><span class="v">' + r.nilai + '%</span></div>';
+          return '<div class="detail-row"><span class="k">' + esc(r.label)
+            + '</span><span class="v">' + r.nilai + '%</span></div>';
         }).join('');
 
         var struktur = i.struktur
-          ? '<div class="detail-row"><span class="k">Struktur Dokumen</span><span class="v">' +
-              esc(i.struktur.status) + ' \u00b7 ' + (i.struktur.terdeteksi || 0) + ' dari ' + (i.struktur.total || 0) + ' bagian terdeteksi' +
-            '</span></div>'
+          ? barisDetail('Struktur Dokumen', esc(i.struktur.status) + ' \u00b7 '
+              + i.struktur.terdeteksi + ' dari ' + i.struktur.total + ' bagian terdeteksi')
           : '';
 
-        var temuan = (i.temuan || []);
+        var temuan = i.temuan || [];
         var daftarTemuan = temuan.length
           ? temuan.map(function (tm, n) {
-              var sumber = (tm.sumber || []).map(function (s) {
-                return '<li class="sumber-item text-secondary">' +
-                         '<i class="bi bi-link-45deg me-1"></i>' +
-                         esc(s.judul) + ' \u2014 ' + esc(s.penulis) + ' (' + esc(s.tahun) + ') \u00b7 ' +
-                         '<span class="fw-semibold">' + (s.kecocokan != null ? s.kecocokan + '%' : '\u2014') + '</span>' +
-                       '</li>';
-              }).join('');
-
               return '<div class="temuan-box">' +
                 '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">' +
-                  '<span class="fw-semibold">Temuan #' + (n + 1) + ' \u00b7 ' + esc(tm.bab) + '</span>' +
+                  '<span class="fw-semibold">Temuan #' + (n + 1) + '</span>' +
                   '<span class="badge ' + tingkat(tm.persentase).cls + '">' + tm.persentase + '% kemiripan</span>' +
                 '</div>' +
-                '<div class="row-meta mb-2"><i class="bi bi-bookmark me-1"></i>Halaman ' + esc(tm.halaman) + '</div>' +
-                '<div class="small mb-2">\u201c' + esc(String(tm.teks || '').slice(0, 220)) +
-                  (String(tm.teks || '').length > 220 ? '\u2026' : '') + '\u201d</div>' +
-                '<div class="row-meta mb-1"><i class="bi bi-info-circle me-1"></i>' + esc(tm.catatan) + '</div>' +
-                (sumber ? '<ul class="list-unstyled mb-0 mt-2">' + sumber + '</ul>' : '') +
+                '<div class="small mb-2">\u201c' + esc(tm.teks.slice(0, 220))
+                  + (tm.teks.length > 220 ? '\u2026' : '') + '\u201d</div>' +
+                (tm.sumber
+                  ? '<div class="row-meta"><i class="bi bi-link-45deg me-1"></i>Perkiraan sumber: '
+                    + esc(tm.sumber) + '</div>'
+                  : '<div class="row-meta"><i class="bi bi-dash-circle me-1"></i>Sumber tidak dicatat.</div>') +
               '</div>';
             }).join('')
           : '<p class="small text-secondary mb-0">Tidak ada temuan kemiripan yang tercatat pada pemeriksaan ini.</p>';
 
         document.getElementById('modalDetailIsi').innerHTML =
           '<div class="mb-2">' +
-            '<div class="detail-row"><span class="k">Waktu Pemeriksaan</span><span class="v">' + esc(tanggalRingkas(i.arsip)) + '</span></div>' +
-            '<div class="detail-row"><span class="k">Judul Dokumen</span><span class="v">' + esc(i.dokumen.judul) + '</span></div>' +
-            '<div class="detail-row"><span class="k">NIM</span><span class="v">' + (i.dokumen.nim ? esc(i.dokumen.nim) : '\u2014') + '</span></div>' +
-            '<div class="detail-row"><span class="k">Jenis Dokumen</span><span class="v">' + esc(i.dokumen.jenis || '\u2014') + '</span></div>' +
-            '<div class="detail-row"><span class="k">Berkas</span><span class="v">' + esc(i.dokumen.berkas || '\u2014') +
-              (i.dokumen.ukuran ? ' \u00b7 ' + esc(i.dokumen.ukuran) : '') + '</span></div>' +
-            '<div class="detail-row"><span class="k">Jumlah Halaman</span><span class="v">' +
-              (i.dokumen.halaman ? i.dokumen.halaman + ' halaman' : '\u2014') + '</span></div>' +
-            '<div class="detail-row"><span class="k">Skor Kemiripan</span><span class="v">' +
-              '<span class="badge ' + t.cls + '">' + i.skor + '% \u00b7 Indikasi ' + t.label + '</span></span></div>' +
-            '<div class="detail-row"><span class="k">Jumlah Temuan</span><span class="v">' + temuan.length + ' temuan</span></div>' +
+            barisDetail('Waktu Pemeriksaan', esc(tanggalRingkas(i.arsip))) +
+            barisDetail('Judul Dokumen', esc(i.dokumen.judul)) +
+            barisDetail('NIM', i.dokumen.nim ? esc(i.dokumen.nim) : '\u2014') +
+            (i.dokumen.nama ? barisDetail('Nama Mahasiswa', esc(i.dokumen.nama)) : '') +
+            barisDetail('Jenis Dokumen', esc(i.dokumen.jenis || '\u2014')) +
+            barisDetail('Berkas', esc(i.dokumen.berkas || '\u2014')
+              + (i.dokumen.ukuran ? ' \u00b7 ' + esc(i.dokumen.ukuran) : '')) +
+            barisDetail('Skor Kemiripan', '<span class="badge ' + t.cls + '">' + i.skor
+              + '% \u00b7 Indikasi ' + t.label + '</span>') +
+            barisDetail('Jumlah Temuan', temuan.length + ' temuan') +
+            (i.engine ? barisDetail('Mesin Analisis', esc(i.engine)) : '') +
             struktur +
           '</div>' +
 
           '<h3 class="h6 fw-bold mb-2 mt-4"><i class="bi bi-pie-chart text-primary me-2"></i>Rincian Sumber Kemiripan</h3>' +
-          (rincian || '<p class="small text-secondary mb-0">Rincian sumber tidak tersedia.</p>') +
+          (rincian || '<p class="small text-secondary mb-0">Rincian sumber tidak tersedia pada rekaman ini.</p>') +
 
           '<h3 class="h6 fw-bold mb-2 mt-4"><i class="bi bi-list-check text-primary me-2"></i>Temuan Kemiripan</h3>' +
           daftarTemuan;
 
-        document.getElementById('btnKeDokumen').setAttribute('href', 'admin-dokumen.html?nim=' + encodeURIComponent(i.dokumen.nim || ''));
+        document.getElementById('btnKeDokumen').setAttribute('href',
+          'admin-dokumen.html?nim=' + encodeURIComponent(i.dokumen.nim || ''));
         modal().show();
       }
 
       document.getElementById('btnLihatHasil').addEventListener('click', function () {
         if (!detailSekarang) return;
-        try {
-          sessionStorage.setItem(KUNCI_HASIL, JSON.stringify(detailSekarang));
-        } catch (err) { /* result.html akan memakai data contoh bila storage diblokir */ }
-        window.location.href = 'result.html';
+        // result.html memuat rekaman langsung dari backend berdasarkan id-nya.
+        window.location.href = 'result.html?id=' + encodeURIComponent(detailSekarang.id);
       });
 
       /* ---------------- Event ---------------- */
@@ -712,19 +774,46 @@
         if (tombol) bukaDetail(parseInt(tombol.getAttribute('data-detail'), 10));
       });
 
-      inputCari.addEventListener('input', render);
-      filterTingkat.addEventListener('change', render);
+      // Pencarian & filter dikerjakan server supaya tetap akurat pada data besar.
+      // Diberi jeda singkat agar tidak memanggil server pada setiap ketikan.
+      var jamCari = null;
+      inputCari.addEventListener('input', function () {
+        window.clearTimeout(jamCari);
+        jamCari = window.setTimeout(muatRiwayat, 350);
+      });
+
+      filterTingkat.addEventListener('change', muatRiwayat);
       selectUrut.addEventListener('change', render);
-      selectMode.addEventListener('change', render);
+      selectMode.addEventListener('change', muatRiwayat);
+
       document.getElementById('btnMuatUlang').addEventListener('click', function () {
         selectMode.value = 'normal';
-        render();
+        muatRiwayat();
       });
+
       document.getElementById('btnCetak').addEventListener('click', function () {
         window.print();
       });
 
-      render();
+      /* ---------------- Langkah 1-2: ambang & pemuatan awal ---------------- */
+      tulisAmbang();
+      if (nimTautan) {
+        alertContoh.classList.remove('d-none');
+        alertContoh.classList.add('d-flex');
+        alertContoh.innerHTML = '<i class="bi bi-funnel me-1"></i>Menampilkan riwayat pemeriksaan '
+          + 'untuk NIM <strong>' + esc(nimTautan) + '</strong>.'
+          + ' <a href="admin-riwayat.html" class="ms-1">Tampilkan semua</a>';
+      }
+
+      IPPL.minta('/api/health', { tanpaToken: true }).then(function (info) {
+        var cfg = (info && info.ai_config) || {};
+        if (typeof cfg.ambang_tinggi === 'number') ambang.tinggi = cfg.ambang_tinggi;
+        if (typeof cfg.ambang_sedang === 'number') ambang.sedang = cfg.ambang_sedang;
+      }).catch(function () { /* ambang bawaan dipakai bila /api/health tidak terjangkau */ })
+        .then(function () {
+          tulisAmbang();
+          muatRiwayat();
+        });
     })();
   </script>
 </body>

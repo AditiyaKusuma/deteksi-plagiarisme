@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proses Pemeriksaan &mdash; Deteksi Plagiarisme</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --brand: #0d6efd; }
+
+    body {
+      background:
+        radial-gradient(1100px 420px at 10% -10%, #e7f0ff 0%, transparent 60%),
+        radial-gradient(900px 380px at 100% 0%, #eafaf3 0%, transparent 55%),
+        #f4f6fb;
+      min-height: 100vh;
+    }
+
+    .navbar-brand-icon {
+      width: 36px; height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .18);
+      border-radius: .6rem;
+    }
+
+    .card { border: 1px solid rgba(15, 23, 42, .07); border-radius: 1rem; }
+    .card-header { border-radius: 1rem 1rem 0 0 !important; }
+    .min-w-0 { min-width: 0; }
+
+    .info-row { display: flex; justify-content: space-between; gap: 1rem; padding: .6rem 0; border-bottom: 1px dashed #e5eaf3; }
+    .info-row:last-child { border-bottom: 0; }
+    .info-row .k { color: #6b7280; font-size: .82rem; }
+    .info-row .v { font-weight: 600; font-size: .875rem; text-align: right; overflow-wrap: anywhere; }
+
+    /* ---------- Langkah proses ---------- */
+    .langkah { display: flex; gap: .85rem; padding: .7rem 0; }
+    .langkah + .langkah { border-top: 1px dashed #e5eaf3; }
+    .langkah .ikon { font-size: 1.15rem; line-height: 1.2; flex: 0 0 auto; width: 1.35rem; text-align: center; }
+    .langkah .judul { font-weight: 600; font-size: .9rem; }
+    .langkah .ket { font-size: .78rem; color: #6b7280; }
+    .langkah.is-menunggu .judul { color: #6b7280; font-weight: 500; }
+    .langkah.is-diproses .judul { color: var(--brand); }
+    .langkah.is-selesai .judul { color: #198754; }
+    .langkah.is-gagal .judul { color: #dc3545; }
+
+    footer { color: #7c8698; font-size: .82rem; }
+  </style>
+</head>
+<body>
+
+  <!-- ============ NAVBAR ============ -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold" href="index.html">
+        <span class="navbar-brand-icon"><i class="bi bi-shield-check"></i></span>
+        <span>Deteksi Plagiarisme</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navMain">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
+          <li class="nav-item"><a class="nav-link" href="index.html"><i class="bi bi-house-door me-1"></i>Beranda</a></li>
+          <li class="nav-item"><a class="nav-link" href="upload.html"><i class="bi bi-cloud-arrow-up me-1"></i>Unggah Dokumen</a></li>
+          <li class="nav-item"><a class="nav-link active" href="proses.html"><i class="bi bi-activity me-1"></i>Proses Pemeriksaan</a></li>
+          <li class="nav-item"><a class="nav-link" href="riwayat.html"><i class="bi bi-clock-history me-1"></i>Riwayat</a></li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+              <i class="bi bi-person-circle me-1"></i><span id="navNamaPengguna">Pengguna</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item text-danger" href="#" id="navLogout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4 py-lg-5">
+
+    <!-- ============ HEADING ============ -->
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+      <div>
+        <a href="upload.html" class="text-decoration-none small text-secondary">
+          <i class="bi bi-arrow-left me-1"></i>Kembali ke Unggah Dokumen
+        </a>
+        <h1 class="h4 fw-bold mb-1 mt-1">Proses Pemeriksaan Dokumen</h1>
+        <p class="text-secondary mb-0">
+          Sistem sedang memproses dokumen dan menjalankan analisis AI. Jangan tutup halaman ini
+          sampai proses selesai.
+        </p>
+      </div>
+      <span class="badge fs-6 px-3 py-2 bg-secondary-subtle text-secondary-emphasis border" id="badgeStatus">
+        Menunggu
+      </span>
+    </div>
+
+    <div class="row g-4">
+
+      <!-- ============ STATUS PROSES ============ -->
+      <div class="col-lg-7">
+        <div class="card shadow-sm h-100">
+          <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-activity text-primary me-2"></i>Status Pemeriksaan</h2>
+            <span class="small text-secondary" id="teksPersen">0%</span>
+          </div>
+          <div class="card-body p-3 p-md-4">
+
+            <!-- Progress -->
+            <div class="progress mb-2" style="height: 10px;" role="progressbar"
+                 aria-label="Kemajuan proses pemeriksaan" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" id="progressWrap">
+              <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                   style="width: 0%" id="progressBar"></div>
+            </div>
+            <p class="small text-secondary mb-4" id="labelTahapSekarang">Menunggu antrean pemeriksaan&hellip;</p>
+
+            <!-- Pesan kegagalan layanan AI atau koneksi -->
+            <div class="alert alert-danger d-none mb-4" id="alertGagal" role="alert">
+              <div class="d-flex gap-2">
+                <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+                <div>
+                  <div class="fw-semibold" id="judulGagal">Proses pemeriksaan gagal</div>
+                  <div class="small mb-3" id="pesanGagal">&mdash;</div>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-sm btn-danger" id="btnCobaLagi">
+                      <i class="bi bi-arrow-clockwise me-1"></i>Coba Lagi
+                    </button>
+                    <a href="upload.html" class="btn btn-sm btn-outline-secondary">
+                      <i class="bi bi-cloud-arrow-up me-1"></i>Unggah Ulang Dokumen
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pesan berhasil -->
+            <div class="alert alert-success d-none mb-4" id="alertBerhasil" role="alert">
+              <i class="bi bi-check2-circle me-1"></i>
+              Pemeriksaan selesai. Mengalihkan ke halaman hasil&hellip;
+            </div>
+
+            <!-- Langkah-langkah -->
+            <h3 class="h6 fw-bold small text-uppercase text-secondary mb-3" style="letter-spacing:.04em">
+              <i class="bi bi-list-check me-1"></i>Tahapan Pemeriksaan
+            </h3>
+            <div id="daftarLangkah"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ RINCIAN DOKUMEN ============ -->
+      <div class="col-lg-5">
+        <div class="card shadow-sm mb-4">
+          <div class="card-header bg-white py-3">
+            <h2 class="h6 fw-bold mb-0"><i class="bi bi-file-earmark-text text-primary me-2"></i>Rincian Dokumen</h2>
+          </div>
+          <div class="card-body">
+            <div class="info-row"><span class="k">Judul</span><span class="v" id="rinciJudul">&mdash;</span></div>
+            <div class="info-row"><span class="k">NIM</span><span class="v" id="rinciNim">&mdash;</span></div>
+            <div class="info-row"><span class="k">Jenis Dokumen</span><span class="v" id="rinciJenis">&mdash;</span></div>
+            <div class="info-row"><span class="k">Berkas</span><span class="v" id="rinciBerkas">&mdash;</span></div>
+            <div class="info-row"><span class="k">Waktu Diajukan</span><span class="v" id="rinciWaktu">&mdash;</span></div>
+          </div>
+        </div>
+
+        <!-- ============ FORMULIR PEMERIKSAAN (dikirim ke backend) ============ -->
+        <div class="card shadow-sm mb-4" id="kartuForm">
+          <div class="card-header bg-white py-3">
+            <h2 class="h6 fw-bold mb-0">
+              <i class="bi bi-clipboard-check text-primary me-2"></i>Mulai Pemeriksaan
+            </h2>
+          </div>
+          <div class="card-body">
+            <form id="formProses" novalidate>
+              <div class="mb-3">
+                <label for="judulProses" class="form-label small fw-semibold">Judul Dokumen</label>
+                <input type="text" class="form-control form-control-sm" id="judulProses"
+                       placeholder="Judul proposal atau laporan Tugas Akhir" required minlength="5">
+              </div>
+              <div class="row g-2 mb-3">
+                <div class="col-6">
+                  <label for="nimProses" class="form-label small fw-semibold">NIM</label>
+                  <input type="text" class="form-control form-control-sm" id="nimProses"
+                         inputmode="numeric" placeholder="11241002" required>
+                </div>
+                <div class="col-6">
+                  <label for="jenisProses" class="form-label small fw-semibold">Jenis Dokumen</label>
+                  <select class="form-select form-select-sm" id="jenisProses">
+                    <option value="proposal">Proposal Tugas Akhir</option>
+                    <option value="laporan">Laporan Tugas Akhir</option>
+                  </select>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label for="berkasProses" class="form-label small fw-semibold" id="hintBerkas">
+                  Berkas (PDF/DOC/DOCX, maks 10 MB)
+                </label>
+                <input type="file" class="form-control form-control-sm" id="berkasProses"
+                       accept=".pdf,.doc,.docx">
+              </div>
+              <div class="alert alert-danger py-2 small d-none" id="galatForm" role="alert"></div>
+              <button type="submit" class="btn btn-primary w-100" id="btnMulaiProses">
+                <i class="bi bi-play-circle me-2"></i>Mulai Periksa
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card shadow-sm border-0" style="background: linear-gradient(135deg,#eef4ff,#f6fbff);">
+          <div class="card-body">
+            <div class="d-flex gap-2 mb-2">
+              <i class="bi bi-lightbulb text-primary fs-5"></i>
+              <h3 class="h6 fw-bold mb-0">Catatan</h3>
+            </div>
+            <p class="small text-secondary mb-3">
+              Hasil pemeriksaan merupakan <strong>indikasi awal</strong> berdasarkan analisis AI,
+              bukan keputusan akhir mengenai plagiarisme.
+            </p>
+
+            <!-- Alat bantu demo: menghentikan permintaan ke server (jalur gagal) -->
+            <hr>
+            <label class="form-check form-switch small mb-0">
+              <input class="form-check-input" type="checkbox" id="simulasiGagal">
+              <span class="form-check-label">Batalkan permintaan ke server</span>
+            </label>
+            <div class="small text-secondary mt-1">
+              Dipakai untuk mendemokan pesan kegagalan: permintaan yang sedang berjalan
+              benar-benar dihentikan, bukan memakai data tiruan.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="text-center mt-5">
+      <p class="mb-0">&copy; 2026 &middot; Aplikasi Deteksi Plagiarisme Proposal &amp; Laporan Tugas Akhir Menggunakan AI</p>
+    </footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Jembatan bersama ke backend: token sesi, fetch, dan format tampilan. -->
+  <script src="js/ippl-api.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      /* ==================================================================
+       * PROSES PEMERIKSAAN DOKUMEN (BACKEND NYATA)
+       *
+       * Halaman ini mengunggah dokumen ke server dan menampilkan kemajuan
+       * pemeriksaan yang sesungguhnya:
+       *   POST /api/upload   FormData: nim, nama, judul, jenis_dokumen, file
+       *   -> HTTP 201 berisi rekaman hasil -> dialihkan ke result.html?id=<id>
+       *
+       * Kemajuan unggah dibaca dari peristiwa XMLHttpRequest.upload (fetch
+       * tidak menyediakan progres unggah). Setelah berkas terkirim, server
+       * menjalankan ekstraksi teks + analisis LLM dalam satu permintaan;
+       * selama menunggu balasan, bilah kemajuan hanya perkiraan (estimasi)
+       * yang sengaja ditahan di bawah 100% sampai balasan server tiba.
+       * ================================================================== */
+
+      var TIMEOUT_MS = 120000;              // 2 menit: unggah + ekstraksi + analisis LLM
+      var EKSTENSI   = ['pdf', 'doc', 'docx'];
+
+      /* Tahapan pemeriksaan dokumen */
+      var LANGKAH = [
+        { kunci: 'validasi',    judul: 'Memvalidasi dokumen',                ket: 'Memeriksa format dan ukuran berkas',          pct: 10 },
+        { kunci: 'unggah',      judul: 'Mengunggah berkas ke server',        ket: 'Mengirim dokumen ke backend',                 pct: 30 },
+        { kunci: 'ekstraksi',   judul: 'Mengekstraksi teks dokumen',         ket: 'pdf-parse (PDF) / mammoth (DOCX) di server',  pct: 55 },
+        { kunci: 'plagiarisme', judul: 'Menganalisis indikasi plagiarisme',  ket: 'Teks dikirim ke layanan AI/LLM',              pct: 78 },
+        { kunci: 'penyusunan',  judul: 'Menyusun hasil pemeriksaan',         ket: 'Memeriksa struktur & menyiapkan laporan',     pct: 100 }
+      ];
+
+      // ====== util ======
+      function esc(s) { return IPPL.esc(s); }
+
+      function formatBytes(bytes) { return IPPL.formatBytes(bytes); }
+
+      function ekstensi(nama) {
+        var bagian = String(nama || '').toLowerCase().split('.');
+        return bagian.length > 1 ? bagian.pop() : '';
+      }
+
+      // ====== elemen ======
+      var badgeStatus   = document.getElementById('badgeStatus');
+      var progressBar   = document.getElementById('progressBar');
+      var progressWrap  = document.getElementById('progressWrap');
+      var teksPersen    = document.getElementById('teksPersen');
+      var labelTahap    = document.getElementById('labelTahapSekarang');
+      var daftarLangkah = document.getElementById('daftarLangkah');
+      var alertGagal    = document.getElementById('alertGagal');
+      var judulGagal    = document.getElementById('judulGagal');
+      var pesanGagal    = document.getElementById('pesanGagal');
+      var alertBerhasil = document.getElementById('alertBerhasil');
+      var simulasiGagal = document.getElementById('simulasiGagal');
+      var kartuForm     = document.getElementById('kartuForm');
+      var formProses    = document.getElementById('formProses');
+      var inputJudul    = document.getElementById('judulProses');
+      var inputNim      = document.getElementById('nimProses');
+      var inputJenis    = document.getElementById('jenisProses');
+      var inputBerkas   = document.getElementById('berkasProses');
+      var galatForm     = document.getElementById('galatForm');
+      var btnMulai      = document.getElementById('btnMulaiProses');
+
+      // ====== sesi & guard (dialihkan ke login.html?next=proses.html) ======
+      var sesi = IPPL.wajibMasuk();
+      if (!sesi) return;
+
+      IPPL.tampilkanNama('navNamaPengguna', sesi);
+
+      document.getElementById('navLogout').addEventListener('click', function (e) {
+        e.preventDefault();
+        IPPL.keluar('login.html');
+      });
+
+      // Nilai awal diambil dari akun yang sedang masuk (masih dapat diubah).
+      if (sesi.nim) inputNim.value = sesi.nim;
+
+      var STATUS = {
+        menunggu: { label: 'Menunggu',          cls: 'bg-secondary-subtle text-secondary-emphasis border' },
+        diproses: { label: 'Sedang Diproses',   cls: 'bg-primary-subtle text-primary-emphasis border' },
+        berhasil: { label: 'Berhasil',          cls: 'bg-success-subtle text-success-emphasis border' },
+        gagal:    { label: 'Gagal',             cls: 'bg-danger-subtle text-danger-emphasis border' }
+      };
+
+      function setStatus(kunci) {
+        var s = STATUS[kunci];
+        badgeStatus.className = 'badge fs-6 px-3 py-2 ' + s.cls;
+        badgeStatus.textContent = s.label;
+      }
+
+      function setProgress(pct) {
+        pct = Math.max(0, Math.min(100, Math.round(pct)));
+        progressBar.style.width = pct + '%';
+        progressWrap.setAttribute('aria-valuenow', String(pct));
+        teksPersen.textContent = pct + '%';
+      }
+
+      // menunggu | diproses | selesai | gagal
+      function gambarLangkah(keadaan) {
+        daftarLangkah.innerHTML = LANGKAH.map(function (l, i) {
+          var st = keadaan[i] || 'menunggu';
+
+          if (st === 'selesai') {
+            return '<div class="langkah is-selesai">' +
+                     '<span class="ikon text-success"><i class="bi bi-check-circle-fill"></i></span>' +
+                     '<div><div class="judul">' + esc(l.judul) + '</div>' +
+                     '<div class="ket">' + esc(l.ket) + '</div></div>' +
+                   '</div>';
+          }
+          if (st === 'diproses') {
+            return '<div class="langkah is-diproses">' +
+                     '<span class="ikon text-primary"><span class="spinner-border spinner-border-sm"></span></span>' +
+                     '<div><div class="judul">' + esc(l.judul) + '</div>' +
+                     '<div class="ket">' + esc(l.ket) + '</div></div>' +
+                   '</div>';
+          }
+          if (st === 'gagal') {
+            return '<div class="langkah is-gagal">' +
+                     '<span class="ikon text-danger"><i class="bi bi-x-circle-fill"></i></span>' +
+                     '<div><div class="judul">' + esc(l.judul) + '</div>' +
+                     '<div class="ket text-danger">' + esc(l.ket) + '</div></div>' +
+                   '</div>';
+          }
+          return '<div class="langkah is-menunggu">' +
+                   '<span class="ikon text-secondary"><i class="bi bi-circle"></i></span>' +
+                   '<div><div class="judul">' + esc(l.judul) + '</div>' +
+                   '<div class="ket">' + esc(l.ket) + '</div></div>' +
+                 '</div>';
+        }).join('');
+      }
+
+      // ====== keadaan proses ======
+      var xhr             = null;       // permintaan unggah yang sedang berjalan
+      var berjalan        = false;
+      var idxSekarang     = -1;
+      var jamPasir        = null;       // batas waktu total permintaan
+      var pewaktuEstimasi = null;       // perkiraan kemajuan saat menunggu server
+      var BATAS_BYTE      = 10 * 1024 * 1024;   // disesuaikan dari /api/health
+
+      /** Menampilkan/menyembunyikan pesan validasi formulir. */
+      function galatFormTampil(pesan) {
+        galatForm.textContent = pesan;
+        galatForm.classList.remove('d-none');
+      }
+
+      function galatFormSembunyi() {
+        galatForm.textContent = '';
+        galatForm.classList.add('d-none');
+      }
+
+      /** Mengisi kartu "Rincian Dokumen" dari dokumen yang sedang diproses. */
+      function isiRincian(meta) {
+        document.getElementById('rinciJudul').textContent  = meta.judul || '—';
+        document.getElementById('rinciNim').textContent    = meta.nim || '—';
+        document.getElementById('rinciJenis').textContent  = meta.jenis || '—';
+        document.getElementById('rinciBerkas').textContent = (meta.berkas || '—')
+          + (meta.ukuran ? ' (' + meta.ukuran + ')' : '');
+        document.getElementById('rinciWaktu').textContent  = meta.waktu || '—';
+      }
+
+      function jamSekarang() {
+        var t = new Date();
+        return t.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+          + ', ' + t.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function keadaanLangkah(idx, statusSaatIni) {
+        return LANGKAH.map(function (l, i) {
+          if (statusSaatIni === 'gagal' && i === idx) return 'gagal';
+          if (i < idx) return 'selesai';
+          if (i === idx) return 'diproses';
+          return 'menunggu';
+        });
+      }
+
+      /** Menghentikan seluruh timer; dipakai saat proses berakhir. */
+      function hentikanSemua() {
+        if (jamPasir) { window.clearTimeout(jamPasir); jamPasir = null; }
+        if (pewaktuEstimasi) { window.clearInterval(pewaktuEstimasi); pewaktuEstimasi = null; }
+        berjalan = false;
+      }
+
+      /** Mengunci formulir selama proses berjalan agar tidak terkirim dua kali. */
+      function kunciForm(kunci) {
+        btnMulai.disabled    = kunci;
+        inputJudul.disabled  = kunci;
+        inputNim.disabled    = kunci;
+        inputJenis.disabled  = kunci;
+        inputBerkas.disabled = kunci;
+        btnMulai.innerHTML = kunci
+          ? '<span class="spinner-border spinner-border-sm me-2"></span>Memproses…'
+          : '<i class="bi bi-play-circle me-2"></i>Mulai Periksa';
+      }
+
+      /** Menandai satu tahapan sebagai langkah yang sedang berjalan. */
+      function aktifkanLangkah(kunci) {
+        var idx = 0;
+        for (var i = 0; i < LANGKAH.length; i++) {
+          if (LANGKAH[i].kunci === kunci) { idx = i; break; }
+        }
+        idxSekarang = idx;
+        labelTahap.textContent = LANGKAH[idx].judul + '…';
+        gambarLangkah(keadaanLangkah(idx));
+        setProgress(LANGKAH[idx].pct);
+      }
+
+      /** Menampilkan keadaan gagal (galat server, koneksi, atau waktu habis). */
+      function gagal(judul, pesan) {
+        hentikanSemua();
+        kunciForm(false);
+        setStatus('gagal');
+        progressBar.classList.remove('progress-bar-animated');
+        progressBar.classList.add('bg-danger');
+        labelTahap.textContent = 'Proses dihentikan karena terjadi kegagalan.';
+        gambarLangkah(LANGKAH.map(function (l, i) {
+          if (i < idxSekarang) return 'selesai';
+          if (i === idxSekarang) return 'gagal';
+          return 'menunggu';
+        }));
+        judulGagal.textContent = judul;
+        pesanGagal.innerHTML = pesan;
+        alertGagal.classList.remove('d-none');
+        alertBerhasil.classList.add('d-none');
+      }
+
+      /** Pemeriksaan selesai: tampilkan hasil lalu buka result.html?id=<id>. */
+      function berhasil(rekaman) {
+        hentikanSemua();
+        setStatus('berhasil');
+        progressBar.classList.remove('progress-bar-animated', 'bg-danger');
+        progressBar.classList.add('bg-primary');
+        setProgress(100);
+        labelTahap.textContent = 'Pemeriksaan selesai.';
+        gambarLangkah(LANGKAH.map(function () { return 'selesai'; }));
+
+        // Rekaman asli dari server disimpan sebagai cadangan supaya result.html
+        // tetap dapat menampilkan hasil bila permintaan detailnya gagal.
+        try { sessionStorage.setItem('hasilAnalisis', JSON.stringify(rekaman)); } catch (err) { /* diabaikan */ }
+
+        kunciForm(false);
+        alertBerhasil.classList.remove('d-none');
+        window.setTimeout(function () {
+          window.location.href = 'result.html?id=' + encodeURIComponent(rekaman.id);
+        }, 900);
+      }
+
+      /** Mengirim dokumen ke POST /api/upload dengan progres unggah nyata. */
+      function kirimDokumen(berkas, meta) {
+        xhr = new XMLHttpRequest();
+
+        var fd = new FormData();
+        fd.append('nim', meta.nim);
+        fd.append('nama', meta.nama);
+        fd.append('judul', meta.judul);
+        fd.append('jenis_dokumen', meta.jenisKode);
+        fd.append('file', berkas, berkas.name);
+
+        xhr.open('POST', IPPL.API_BASE + '/api/upload', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        var token = IPPL.token();
+        if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+
+        // Progres nyata saat berkas dikirim (tahap 1 dari 5, 10% - 30%).
+        xhr.upload.onprogress = function (e) {
+          if (!berjalan || !e.lengthComputable || !e.total) return;
+          setProgress(10 + (e.loaded / e.total) * 20);
+        };
+
+        // Berkas selesai terkirim: server menjalankan ekstraksi + analisis LLM.
+        xhr.upload.onload = function () {
+          if (!berjalan) return;
+          aktifkanLangkah('ekstraksi');
+          pewaktuEstimasi = window.setInterval(function () {
+            // Perkiraan kemajuan, sengaja ditahan di bawah 100% sampai balasan tiba.
+            var pct = parseFloat(progressBar.style.width) || LANGKAH[2].pct;
+            if (pct < 95) setProgress(pct + 1);
+          }, 400);
+        };
+
+        // Balasan server: rekaman hasil analisis atau pesan galat.
+        xhr.onload = function () {
+          if (!berjalan) return;
+          hentikanSemua();
+
+          var data = null;
+          try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch (err) { data = null; }
+
+          if (xhr.status === 201 && data && data.id) { berhasil(data); return; }
+
+          var pesan = (data && (data.message || data.error))
+            || ('Server membalas HTTP ' + xhr.status + ' tanpa keterangan.');
+
+          if (xhr.status === 401 || xhr.status === 403) {
+            gagal('Sesi tidak berlaku', esc(pesan)
+              + ' <a href="login.html?next=proses.html">Masuk kembali</a> lalu ulangi pemeriksaan.');
+            return;
+          }
+          if (xhr.status === 400) {
+            gagal('Dokumen ditolak server', esc(pesan));
+            return;
+          }
+          if (xhr.status >= 500) {
+            gagal('Proses analisis gagal', esc(pesan)
+              + ' Periksa konfigurasi layanan AI (<code>.env</code> atau panel Admin).');
+            return;
+          }
+          gagal('Pemeriksaan gagal', esc(pesan));
+        };
+
+        xhr.onerror = function () {
+          if (!berjalan) return;
+          gagal('Koneksi ke server gagal', 'Tidak dapat menghubungi backend <code>'
+            + esc(IPPL.API_BASE) + '</code>. Pastikan server sudah dijalankan (<code>npm start</code>).');
+        };
+
+        xhr.ontimeout = function () {
+          if (!berjalan) return;
+          gagal('Permintaan melebihi batas waktu', 'Proses melebihi '
+            + Math.round(TIMEOUT_MS / 1000) + ' detik. Coba lagi dengan dokumen yang lebih kecil.');
+        };
+
+        xhr.timeout = TIMEOUT_MS;
+        xhr.send(fd);
+      }
+
+      /** Memvalidasi masukan formulir lalu memulai pemeriksaan. */
+      function jalankanAnalisis() {
+        if (berjalan) return;
+        galatFormSembunyi();
+
+        var berkas    = inputBerkas.files && inputBerkas.files[0];
+        var judul     = inputJudul.value.trim();
+        var nim       = inputNim.value.trim();
+        var jenisKode = inputJenis.value;
+
+        /* ---- validasi sisi klien (mengikuti aturan server) ---- */
+        if (judul.length < 5) {
+          galatFormTampil('Judul dokumen wajib diisi, minimal 5 karakter.');
+          inputJudul.focus();
+          return;
+        }
+        if (!/^[0-9]{8,12}$/.test(nim)) {
+          galatFormTampil('NIM harus berupa angka 8-12 digit.');
+          inputNim.focus();
+          return;
+        }
+        if (!berkas) {
+          galatFormTampil('Pilih berkas dokumen (PDF, DOC, atau DOCX) terlebih dahulu.');
+          inputBerkas.focus();
+          return;
+        }
+        if (EKSTENSI.indexOf(ekstensi(berkas.name)) === -1) {
+          galatFormTampil('Format berkas tidak didukung. Gunakan PDF, DOC, atau DOCX.');
+          return;
+        }
+        if (berkas.size > BATAS_BYTE) {
+          galatFormTampil('Ukuran berkas ' + formatBytes(berkas.size) + ' melebihi batas '
+            + formatBytes(BATAS_BYTE) + ' yang diizinkan server.');
+          return;
+        }
+
+        var meta = {
+          judul: judul,
+          nim: nim,
+          nama: (sesi && sesi.nama) || 'Tidak disebutkan',
+          jenis: inputJenis.options[inputJenis.selectedIndex].text,
+          jenisKode: jenisKode,
+          berkas: berkas.name,
+          ukuran: formatBytes(berkas.size),
+          waktu: jamSekarang()
+        };
+
+        /* ---- mulai pemeriksaan ---- */
+        berjalan = true;
+        alertGagal.classList.add('d-none');
+        alertBerhasil.classList.add('d-none');
+        progressBar.classList.remove('bg-danger');
+        progressBar.classList.add('bg-primary', 'progress-bar-animated');
+        setStatus('diproses');
+        kunciForm(true);
+        isiRincian(meta);
+        document.title = 'Memeriksa: ' + meta.judul + ' — Deteksi Plagiarisme';
+        aktifkanLangkah('validasi');
+
+        window.setTimeout(function () {
+          if (!berjalan) return;
+          aktifkanLangkah('unggah');
+          kirimDokumen(berkas, meta);
+        }, 350);
+      }
+
+      // ====== kejadian ======
+      formProses.addEventListener('submit', function (e) {
+        e.preventDefault();
+        jalankanAnalisis();
+      });
+
+      document.getElementById('btnCobaLagi').addEventListener('click', function () {
+        simulasiGagal.checked = false;
+        jalankanAnalisis();
+      });
+
+      // Alat bantu demo: menghentikan permintaan yang sedang berjalan ke server
+      // sehingga jalur kegagalan dapat diperlihatkan (tanpa data mock).
+      simulasiGagal.addEventListener('change', function () {
+        if (!simulasiGagal.checked || !berjalan || !xhr) return;
+        var sedangJalan = xhr;
+        xhr = null;
+        gagal('Permintaan dihentikan', 'Pemeriksaan dibatalkan sebelum server selesai '
+          + 'menganalisis dokumen (alat bantu demo jalur kegagalan).');
+        try { sedangJalan.abort(); } catch (err) { /* diabaikan */ }
+        simulasiGagal.checked = false;
+      });
+
+      gambarLangkah(['menunggu', 'menunggu', 'menunggu', 'menunggu', 'menunggu']);
+      setProgress(0);
+
+      // Batas ukuran berkas & status layanan AI dibaca dari server.
+      IPPL.minta('/api/health', { tanpaToken: true }).then(function (info) {
+        var mb = info && info.ai_config ? Number(info.ai_config.maks_ukuran_mb) : 0;
+        if (mb > 0) {
+          BATAS_BYTE = mb * 1024 * 1024;
+          var hint = document.getElementById('hintBerkas');
+          if (hint) hint.textContent = 'Berkas (PDF/DOC/DOCX, maks ' + mb + ' MB)';
+        }
+      }).catch(function () { /* batas bawaan 10 MB tetap dipakai */ });
+    })();
+  </script>
+</body>
+</html>

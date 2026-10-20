@@ -104,6 +104,7 @@
         <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
           <li class="nav-item"><a class="nav-link" href="index.html"><i class="bi bi-house-door me-1"></i>Beranda</a></li>
           <li class="nav-item"><a class="nav-link active" href="upload.html"><i class="bi bi-cloud-arrow-up me-1"></i>Unggah Dokumen</a></li>
+          <li class="nav-item"><a class="nav-link" href="proses.html"><i class="bi bi-activity me-1"></i>Proses Pemeriksaan</a></li>
           <li class="nav-item"><a class="nav-link" href="riwayat.html"><i class="bi bi-clock-history me-1"></i>Riwayat</a></li>
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
@@ -200,7 +201,7 @@
                      aria-label="Pilih berkas dokumen atau tarik ke sini">
                   <div class="dropzone-icon mb-2"><i class="bi bi-cloud-arrow-up"></i></div>
                   <div class="fw-semibold">Tarik &amp; lepas berkas di sini, atau klik untuk memilih</div>
-                  <small>Format: PDF, DOC, DOCX &middot; Maksimal 10 MB</small>
+                  <small>Format: PDF, DOC, DOCX &middot; Maksimal <span id="infoMaksUkuran">10</span> MB</small>
                 </div>
 
                 <input type="file" id="fileInput" name="file" class="d-none"
@@ -246,7 +247,7 @@
           <div class="card-body">
             <ul class="list-unstyled mb-0 small">
               <li class="d-flex gap-2 mb-2"><i class="bi bi-check2-circle text-success"></i><span>Format berkas <strong>PDF</strong>, <strong>DOC</strong>, atau <strong>DOCX</strong>.</span></li>
-              <li class="d-flex gap-2 mb-2"><i class="bi bi-check2-circle text-success"></i><span>Ukuran maksimal <strong>10 MB</strong> per dokumen.</span></li>
+              <li class="d-flex gap-2 mb-2"><i class="bi bi-check2-circle text-success"></i><span>Ukuran maksimal <strong><span id="infoMaksUkuran2">10</span> MB</strong> per dokumen.</span></li>
               <li class="d-flex gap-2 mb-2"><i class="bi bi-check2-circle text-success"></i><span>Teks harus dapat diekstrak (bukan hasil pemindaian/gambar).</span></li>
               <li class="d-flex gap-2"><i class="bi bi-check2-circle text-success"></i><span>Dokumen berisi struktur proposal atau laporan Tugas Akhir.</span></li>
             </ul>
@@ -275,6 +276,8 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Jembatan bersama ke backend: token sesi, fetch, dan format tampilan. -->
+  <script src="js/ippl-api.js"></script>
   <script>
     (function () {
       'use strict';
@@ -291,56 +294,23 @@
        * Jalankan backend lebih dulu:  npm install  &&  npm start
        * ================================================================== */
 
-      var KUNCI_SESI    = 'sesiPengguna';
-      var KUNCI_RIWAYAT = 'riwayatPemeriksaan';
-
-      // Guard login. Set false bila ingin halaman bisa dibuka tanpa masuk.
-      var WAJIB_LOGIN = true;
-
-      function storageTersedia(storage) {
-        try {
-          storage.setItem('__uji', '1');
-          storage.removeItem('__uji');
-          return true;
-        } catch (err) {
-          return false;
-        }
-      }
-
-      function bacaSesi() {
-        try {
-          var raw = sessionStorage.getItem(KUNCI_SESI);
-          return raw ? JSON.parse(raw) : null;
-        } catch (err) {
-          return null;
-        }
-      }
-
-      var sesi = bacaSesi();
-
-      if (WAJIB_LOGIN && !sesi && storageTersedia(sessionStorage)) {
-        window.location.replace('login.html?next=upload.html');
-        return;
-      }
-
-      if (!sesi) sesi = { nama: 'Tamu', nim: '', email: '' };
+      // Guard login: halaman ini hanya untuk pengguna yang sudah masuk.
+      var sesi = IPPL.wajibMasuk();
+      if (!sesi) return;                       // dialihkan ke login.html?next=upload.html
+      if (!sesi.nim) sesi.nim = '';
 
       // ====== Konfigurasi ======
-      var MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+      // Batas ukuran awal 10 MB; nilai sebenarnya dibaca dari panel
+      // Pengaturan AI melalui GET /api/health (lihat muatBatasUkuran()).
+      var MAX_SIZE = 10 * 1024 * 1024;
       var ALLOWED_EXT = ['pdf', 'doc', 'docx'];
 
-      /* Alamat backend REST API. Bila halaman disajikan oleh server yang sama
-         (protokol http/https), origin dipakai langsung sehingga port mengikuti
-         server; bila dibuka dari berkas lokal (file://), backend diakses pada
-         http://localhost:3000 sesuai spesifikasi API. */
-      var API_BASE = (function () {
-        if (/^https?:$/.test(window.location.protocol) && window.location.host) {
-          return window.location.protocol + '//' + window.location.host;
-        }
-        return 'http://localhost:3000';
-      })();
+      /* Alamat backend REST API dipakai bersama seluruh halaman
+         (lihat public/js/ippl-api.js): origin yang sama bila halaman disajikan
+         server, atau http://localhost:3000 bila dibuka dari berkas lokal. */
+      var API_BASE = IPPL.API_BASE;
       var ENDPOINT_UNGGAH = '/api/upload';
-      var TIMEOUT_MS = 120000; // 2 menit: unggah + analisis di server
+      var TIMEOUT_MS = IPPL.TIMEOUT_UNGGAH; // 2 menit: unggah + analisis di server
 
       // ====== Elemen ======
       var form        = document.getElementById('formUpload');
@@ -359,6 +329,25 @@
       var btnAnalisa  = document.getElementById('btnAnalisa');
       var labelTombol = '<i class="bi bi-search me-2"></i>Periksa Dokumen';
 
+      /**
+       * Menyesuaikan batas ukuran berkas dengan pengaturan panel Pengaturan AI
+       * (GET /api/health). Bila permintaan gagal, batas bawaan 10 MB tetap dipakai.
+       */
+      function muatBatasUkuran() {
+        return IPPL.minta('/api/health', { tanpaToken: true }).then(function (info) {
+          var mb = info && info.ai_config ? Number(info.ai_config.maks_ukuran_mb) : 0;
+          if (!(mb >= 1)) return;
+
+          MAX_SIZE = Math.round(mb * 1024 * 1024);
+          var teksDropzone  = document.getElementById('infoMaksUkuran');
+          var teksKetentuan = document.getElementById('infoMaksUkuran2');
+          if (teksDropzone) teksDropzone.textContent = String(mb);
+          if (teksKetentuan) teksKetentuan.textContent = String(mb);
+        }).catch(function () { /* batas bawaan 10 MB tetap dipakai */ });
+      }
+
+      muatBatasUkuran();
+
       // ====== Sesi pengguna di navbar ======
       var navNama = document.getElementById('navNamaPengguna');
       navNama.textContent = sesi.nama || 'Pengguna';
@@ -370,8 +359,7 @@
 
       document.getElementById('navLogout').addEventListener('click', function (e) {
         e.preventDefault();
-        try { sessionStorage.removeItem(KUNCI_SESI); } catch (err) { /* diabaikan */ }
-        window.location.href = 'login.html';
+        IPPL.keluar('login.html');   // token & sesi dihapus, lalu diarahkan ke login
       });
 
       // ====== Util ======
@@ -435,7 +423,8 @@
           return;
         }
         if (file.size > MAX_SIZE) {
-          showFileError('Ukuran berkas ' + formatBytes(file.size) + ' melebihi batas maksimal 10 MB.');
+          showFileError('Ukuran berkas ' + formatBytes(file.size) + ' melebihi batas maksimal '
+            + Math.round(MAX_SIZE / (1024 * 1024)) + ' MB.');
           return;
         }
         if (file.size === 0) {
@@ -566,40 +555,17 @@
         }
       }
 
-      /** Menyimpan salinan ringkas hasil ke riwayat lokal (dibaca riwayat.html). */
-      function simpanRiwayatLokal(data) {
-        var lama;
+      /**
+       * Menyimpan rekaman hasil dari server sebagai cadangan di sessionStorage.
+       * Riwayat resmi dibaca dari server (GET /api/history); cadangan ini hanya
+       * dipakai result.html bila rekaman tidak tersimpan di server (panel Admin
+       * dapat mematikan pilihan "Simpan riwayat").
+       */
+      function simpanHasilCadangan(data) {
         try {
-          lama = JSON.parse(localStorage.getItem(KUNCI_RIWAYAT) || '[]');
+          sessionStorage.setItem('hasilAnalisis', JSON.stringify(data));
         } catch (err) {
-          lama = [];
-        }
-        if (!Array.isArray(lama)) lama = [];
-
-        var meta   = (data && data.document_metadata) || {};
-        var berkas = (data && data.berkas) || {};
-        var skor   = Number(data && data.overall_similarity_score);
-        if (isNaN(skor)) skor = 0;
-
-        lama.unshift({
-          id: (data && data.id) || '',
-          skor: skor,
-          arsip: (data && data.created_at) || new Date().toISOString(),
-          dokumen: {
-            judul: meta.judul || inputJudul.value.trim(),
-            nim: meta.nim || inputNim.value.trim(),
-            jenis: meta.jenis_dokumen || inputJenis.options[inputJenis.selectedIndex].text,
-            berkas: berkas.nama_asli || '',
-            ukuran: berkas.ukuran || '',
-            halaman: '',
-            diperiksa: formatWaktu(data && data.created_at)
-          }
-        });
-
-        try {
-          localStorage.setItem(KUNCI_RIWAYAT, JSON.stringify(lama.slice(0, 100)));
-        } catch (err) {
-          /* storage penuh/diblokir -> riwayat lokal dilewati, unggahan tetap jalan */
+          /* storage penuh/diblokir -> dilewati, pengalihan ke hasil tetap jalan */
         }
       }
 
@@ -621,6 +587,9 @@
         var status = err && err.status;
         if (status === 400) {
           showAlert('<strong>Permintaan ditolak server (HTTP 400).</strong> ' + pesan);
+        } else if (status === 401 || status === 403) {
+          showAlert('<strong>Sesi kamu sudah berakhir.</strong> ' + pesan +
+                    ' <a href="login.html?next=upload.html">Masuk kembali</a>.');
         } else if (status >= 500) {
           showAlert('<strong>Terjadi kesalahan pada server (HTTP ' + status + ').</strong> ' + pesan);
         } else if (status) {
@@ -655,10 +624,15 @@
 
         function selesai() { window.clearTimeout(jamPasir); }
 
+        // Token sesi (bila ada) dikirim agar pemeriksaan tercatat atas nama pengguna.
+        var tajuk = { 'Accept': 'application/json' };
+        var token = IPPL.token();
+        if (token) tajuk.Authorization = 'Bearer ' + token;
+
         fetch(API_BASE + ENDPOINT_UNGGAH, {
           method: 'POST',
           body: fd,                                     // Content-Type multipart diisi otomatis
-          headers: { 'Accept': 'application/json' },
+          headers: tajuk,
           signal: pengendali ? pengendali.signal : undefined
         }).then(function (res) {
           return res.text().then(function (teks) {
@@ -698,7 +672,7 @@
             throw new Error('Server tidak mengembalikan ID hasil analisis.');
           }
 
-          simpanRiwayatLokal(data);
+          simpanHasilCadangan(data);
 
           aktifkanTombol(false);
           window.location.href = 'result.html?id=' + encodeURIComponent(id);

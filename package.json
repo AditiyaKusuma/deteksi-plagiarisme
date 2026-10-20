@@ -26,6 +26,7 @@
     "express": "^4.21.2",
     "mammoth": "^1.13.0",
     "multer": "^2.0.2",
-    "pdf-parse": "^2.4.5"
+    "pdf-parse": "^2.4.5",
+    "selfsigned": "^5.5.0"
   }
 }

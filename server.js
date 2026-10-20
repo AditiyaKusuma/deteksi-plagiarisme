@@ -8,6 +8,13 @@
  *  Jalan   : npm install  &&  npm start
  *  Basis   : SRS/SDD Aplikasi Deteksi Plagiarisme (NIM 11241002)
  *
+ *  STRUKTUR
+ *    public/   -> halaman frontend (index.html, upload.html, login*.html, admin-*.html)
+ *    data/     -> users.json, ai-config.json, hasil-analisis.json, uploads/
+ *    tests/    -> skrip uji manual (.uji-*.tmp.js)
+ *    docs/     -> dokumen SRS/SDD proyek
+ *    logs/     -> log pengujian (.smoke-*.log)
+ *
  *  ENDPOINT
  *    GET    /api/health                  -> status layanan
  *    POST   /api/upload                  -> unggah berkas, ekstraksi teks, analisis LLM (JSON mode)
@@ -65,14 +72,23 @@ const DOTENV_TERMUAT = !hasilDotenv.error;
 const PORT           = Number(process.env.PORT) || 3000;
 const HOST           = process.env.HOST || '0.0.0.0';
 const ROOT_DIR       = __dirname;
+const UI_DIR         = path.join(ROOT_DIR, 'public');   // berkas frontend (HTML) — lihat bagian 9
 const DATA_DIR       = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT_DIR, 'data');
 const UPLOAD_DIR     = path.join(DATA_DIR, 'uploads');
 const DB_FILE        = path.join(DATA_DIR, 'hasil-analisis.json');
 const USERS_FILE     = path.join(DATA_DIR, 'users.json');        // akun mahasiswa & admin (bagian 2B.1)
 const AI_CONFIG_FILE = path.join(DATA_DIR, 'ai-config.json');    // konfigurasi penyedia AI (bagian 2B.2)
 
-// Frontend membatasi 10 MB (lihat upload.html) — dijaga juga di sisi server.
-const MAX_FILE_SIZE  = 10 * 1024 * 1024;
+// Batas ukuran berkas unggahan.
+//   MAX_FILE_SIZE  : plafon keras middleware multer. Sengaja tidak dapat diubah
+//                    dari panel Admin supaya server tidak kehabisan memori.
+//   MAKS_UKURAN_MB : plafon tertinggi yang boleh dipilih Admin pada panel
+//                    "Pengaturan AI" (field maksUkuran, 1-50 MB). Batas yang
+//                    benar-benar berlaku diambil dari konfigLlm().maksUkuranMb.
+const MAX_FILE_SIZE  = 50 * 1024 * 1024;
+const MAKS_UKURAN_MB = 50;
+// Batas ukuran bawaan yang berlaku (dan tampil pada panel Pengaturan AI).
+const MAKS_UKURAN_BAWAAN_MB = 10;
 
 // Format berkas yang lolos filter unggah. Catatan: ".doc" (Word 97-2003) lolos
 // filter ini, tetapi ditolak pada tahap ekstraksi teks (lihat bagian 4) karena
@@ -321,7 +337,7 @@ function konfigAiBawaan() {
     timeout: Math.round(LLM_TIMEOUT_MS / 1000),
     ambangTinggi: 50,
     ambangSedang: 20,
-    maksUkuran: Math.max(1, Math.round(MAX_FILE_SIZE / (1024 * 1024))),
+    maksUkuran: MAKS_UKURAN_BAWAAN_MB,
     simpanRiwayat: true,
     tampilSumber: true,
     koreksiOtomatis: false,
@@ -568,14 +584,18 @@ function ringkasEkstraksi(ekstraksi) {
 
 /* ---- 5.1 Ambang klasifikasi & struktur yang diperiksa ------------------- */
 /**
- * Ambang klasifikasi indikasi plagiarisme (mengikuti tampilan result.html).
- *   >= 50%  -> Tinggi
- *   >= 20%  -> Sedang
- *   <  20%  -> Rendah
+ * Ambang klasifikasi indikasi plagiarisme.
+ * Nilai ambang mengikuti panel Admin ("Pengaturan AI"): ambangTinggi (bawaan 50)
+ * dan ambangSedang (bawaan 20), sehingga Admin dapat menyesuaikannya tanpa
+ * mengubah kode.
+ *   >= ambangTinggi -> Tinggi
+ *   >= ambangSedang -> Sedang
+ *   <  ambangSedang -> Rendah
  */
 function klasifikasiIndikasi(skor) {
-  if (skor >= 50) return 'Tinggi';
-  if (skor >= 20) return 'Sedang';
+  const ambang = konfigLlm();
+  if (skor >= ambang.ambangTinggi) return 'Tinggi';
+  if (skor >= ambang.ambangSedang) return 'Sedang';
   return 'Rendah';
 }
 
@@ -624,20 +644,100 @@ function kunciLonggar(teks) {
   return String(teks || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
-/* ---- 5.3 Kesiapan LLM --------------------------------------------------- */
+/* ---- 5.3 Konfigurasi LLM efektif --------------------------------------- */
+/**
+ * Nilai dasar LLM tetap berasal dari .env (bagian 1). Namun begitu Admin
+ * menyimpan konfigurasi pada panel "Pengaturan AI", berkas data/ai-config.json
+ * (bagian 2B.2) menimpa nilai dasar itu — termasuk kunci API, model, ambang
+ * klasifikasi, dan batas ukuran berkas. Dengan cara ini panel Admin benar-benar
+ * mengendalikan analisis LLM saat aplikasi berjalan.
+ */
 
-/** true bila kunci API LLM sudah diisi sehingga analisis memakai LLM nyata. */
-function llmSiap() {
-  return LLM_API_KEY.length > 0;
+/** true bila panel Admin pernah menyimpan konfigurasi ke data/ai-config.json. */
+function panelAiTersimpan() {
+  return fs.existsSync(AI_CONFIG_FILE);
 }
 
-/** Host LLM_BASE_URL (tanpa kunci API) untuk ditampilkan pada log & rekaman. */
+/**
+ * Penyedia AI yang dipakai runtime: 'gemini' (gaya generateContent) atau
+ * 'openai' (gaya chat/completions). Pilihan panel Admin dipakai bila berkas
+ * konfigurasinya sudah tersimpan; bila belum, penyedia ditebak dari .env.
+ * Penyedia 'anthropic', 'mistral', 'ollama', dan 'lainnya' memakai gaya
+ * chat/completions karena alamatnya diatur sendiri oleh Admin.
+ */
+function penyediaEfektif() {
+  const pilihan = panelAiTersimpan() ? String(konfigAi.penyedia || '').toLowerCase() : '';
+  if (PENYEDIA_AI.includes(pilihan)) return pilihan === 'gemini' ? 'gemini' : 'openai';
+  return providerAktif();
+}
+
+/**
+ * Konfigurasi LLM yang benar-benar dipakai untuk analisis dokumen.
+ * Nilai dari panel Admin diambil apa adanya (sudah divalidasi saat disimpan),
+ * lalu dibatasi lagi di sini sebagai sabuk pengaman.
+ * @returns {{aktif:boolean, dariPanel:boolean, penyedia:string, model:string,
+ *   endpoint:string, apiKey:string, butuhKunci:boolean, suhu:number,
+ *   maxToken:number, timeoutDetik:number, timeoutMs:number, ambangTinggi:number,
+ *   ambangSedang:number, maksUkuranMb:number, simpanRiwayat:boolean,
+ *   tampilSumber:boolean, koreksiOtomatis:boolean}}
+ */
+function konfigLlm() {
+  const dariPanel  = panelAiTersimpan();
+  const penyedia   = penyediaEfektif();
+  const penyediaPanel = dariPanel ? String(konfigAi.penyedia || '').toLowerCase() : '';
+  const timeoutDetik = batasiAngka(keAngka(konfigAi.timeout, LLM_TIMEOUT_MS / 1000), 5, 120);
+
+  return {
+    // Bila panel belum pernah disimpan, layanan mengikuti .env (aktif).
+    aktif: dariPanel ? konfigAi.aktif === true : true,
+    dariPanel,
+    penyedia,
+    // Penyedia lokal (ollama) tidak memerlukan kunci API.
+    butuhKunci: penyediaPanel !== 'ollama',
+    model: String(konfigAi.model || LLM_MODEL_NAME).trim() || LLM_MODEL_NAME,
+    endpoint: String(konfigAi.endpoint || LLM_BASE_URL).trim().replace(/\/+$/, '') || LLM_BASE_URL,
+    apiKey: String(konfigAi.apiKey || '').trim() || LLM_API_KEY,
+    suhu: batasiAngka(keAngka(konfigAi.suhu, LLM_TEMPERATURE), 0, 1),
+    maxToken: batasiAngka(keAngka(konfigAi.maxToken, 4096), 256, 32000),
+    timeoutDetik,
+    // Spesifikasi membatasi satu panggilan LLM maksimal 30 detik.
+    timeoutMs: Math.min(Math.round(timeoutDetik * 1000), 30000),
+    ambangTinggi: batasiAngka(keAngka(konfigAi.ambangTinggi, 50), 1, 100),
+    ambangSedang: batasiAngka(keAngka(konfigAi.ambangSedang, 20), 0, 100),
+    maksUkuranMb: batasiAngka(keAngka(konfigAi.maksUkuran, MAKS_UKURAN_BAWAAN_MB),
+      1, MAKS_UKURAN_MB),
+    simpanRiwayat: konfigAi.simpanRiwayat !== false,
+    tampilSumber: konfigAi.tampilSumber !== false,
+    // Belum dipakai runtime: hanya disimpan sebagai pilihan panel Admin.
+    koreksiOtomatis: konfigAi.koreksiOtomatis === true,
+  };
+}
+
+/** true bila layanan AI diaktifkan dan kunci API-nya tersedia. */
+function llmSiap() {
+  const k = konfigLlm();
+  return k.aktif && (!k.butuhKunci || k.apiKey.length > 0);
+}
+
+/** Host endpoint LLM (tanpa kunci API) untuk ditampilkan pada log & rekaman. */
 function hostLLM() {
+  const endpoint = konfigLlm().endpoint;
   try {
-    return new URL(LLM_BASE_URL).host;
+    return new URL(endpoint).host;
   } catch (err) {
-    return LLM_BASE_URL;
+    return endpoint;
   }
+}
+
+/** Alamat chat/completions lengkap (endpoint panel boleh sudah lengkap). */
+function alamatOpenAI(k) {
+  return /\/chat\/completions$/i.test(k.endpoint) ? k.endpoint : `${k.endpoint}/chat/completions`;
+}
+
+/** Alamat generateContent Gemini lengkap (endpoint panel boleh sudah lengkap). */
+function alamatGemini(k) {
+  const dasar = /\/models$/i.test(k.endpoint) ? k.endpoint.replace(/\/models$/i, '') : k.endpoint;
+  return `${dasar}/models/${encodeURIComponent(k.model)}:generateContent`;
 }
 
 /**
@@ -683,23 +783,34 @@ const PROMPT_SISTEM_INTI = 'Anda adalah sistem penguji orisinalitas dokumen akad
  * System message lengkap: instruksi ketat di atas, dilanjutkan skema JSON dan
  * aturan penilaian. Skema disertakan agar keluaran benar-benar terstruktur
  * (nama kunci sama persis), bukan hanya "JSON yang valid".
+ *
+ * Ambang klasifikasi pada aturan diambil dari konfigurasi efektif (konfigLlm)
+ * sehingga prompt selalu sejalan dengan ambang yang dipakai server saat
+ * menetapkan classification_level pada rekaman hasil.
+ * @returns {string} system message untuk LLM
  */
-const PROMPT_SISTEM = [
-  PROMPT_SISTEM_INTI,
-  '',
-  'SKEMA JSON YANG WAJIB DIIKUTI (nama kunci sama persis, tanpa kunci tambahan):',
-  JSON.stringify(SKEMA_KELUARAN, null, 2),
-  '',
-  'ATURAN',
-  '- Balas HANYA satu objek JSON valid: tanpa penjelasan, tanpa markdown, tanpa pagar kode.',
-  '- overall_similarity_score: bilangan 0-100 (persentase kemiripan keseluruhan).',
-  '- classification_level: "Rendah" bila skor < 20, "Sedang" bila 20-49, "Tinggi" bila >= 50.',
-  '- structure_analysis: bernilai boolean; true hanya bila bagian itu benar-benar ada di dokumen.',
-  '- flagged_passages: maksimal 10 temuan, diurutkan dari persentase terbesar.',
-  '- Isi "text" dengan kutipan PERSIS dari dokumen, bukan karangan (maksimal 300 karakter).',
-  '- Bila tidak ada indikasi kemiripan, kirim flagged_passages sebagai array kosong.',
-  '- Seluruh isi balasan memakai bahasa Indonesia.',
-].join('\n');
+function promptSistem() {
+  const k = konfigLlm();
+
+  return [
+    PROMPT_SISTEM_INTI,
+    '',
+    'SKEMA JSON YANG WAJIB DIIKUTI (nama kunci sama persis, tanpa kunci tambahan):',
+    JSON.stringify(SKEMA_KELUARAN, null, 2),
+    '',
+    'ATURAN',
+    '- Balas HANYA satu objek JSON valid: tanpa penjelasan, tanpa markdown, tanpa pagar kode.',
+    '- overall_similarity_score: bilangan 0-100 (persentase kemiripan keseluruhan).',
+    `- classification_level: "Rendah" bila skor < ${k.ambangSedang}, `
+      + `"Sedang" bila ${k.ambangSedang}-${k.ambangTinggi - 1}, `
+      + `"Tinggi" bila >= ${k.ambangTinggi}.`,
+    '- structure_analysis: bernilai boolean; true hanya bila bagian itu benar-benar ada di dokumen.',
+    '- flagged_passages: maksimal 10 temuan, diurutkan dari persentase terbesar.',
+    '- Isi "text" dengan kutipan PERSIS dari dokumen, bukan karangan (maksimal 300 karakter).',
+    '- Bila tidak ada indikasi kemiripan, kirim flagged_passages sebagai array kosong.',
+    '- Seluruh isi balasan memakai bahasa Indonesia.',
+  ].join('\n');
+}
 
 /**
  * Menyusun pesan yang dikirim ke LLM: prompt sistem + data dokumen.
@@ -710,7 +821,7 @@ const PROMPT_SISTEM = [
  */
 function susunPromptAnalisis(meta, teks, infoPanjang) {
   return {
-    system: PROMPT_SISTEM,
+    system: promptSistem(),
     user: [
       'DATA DOKUMEN',
       `- NIM            : ${meta.nim}`,
@@ -764,7 +875,8 @@ function ringkasGalatLLM(teksRespons) {
 /** Menyusun AppError dari respons galat penyedia LLM (aman, tanpa kunci API). */
 function galatDariPenyedia(status, teksRespons) {
   const saran = (status === 401 || status === 403)
-    ? ' Periksa kembali LLM_API_KEY pada berkas .env.'
+    ? ' Periksa kembali kunci API pada panel "Pengaturan AI" '
+      + '(tersimpan di data/ai-config.json) atau LLM_API_KEY pada berkas .env.'
     : '';
   return new AppError(status === 400 ? 400 : 502,
     `Layanan LLM menolak permintaan (HTTP ${status}).${saran} `
@@ -773,28 +885,30 @@ function galatDariPenyedia(status, teksRespons) {
 }
 
 /**
- * Satu panggilan API LLM dengan batas waktu LLM_TIMEOUT_MS (maksimal 30 detik).
- * Penyedia (OpenAI/Gemini) dipilih otomatis oleh providerAktif().
+ * Satu panggilan API LLM memakai konfigurasi efektif (konfigLlm): model,
+ * suhu, batas token, kunci API, dan batas waktu dari panel Admin/.env.
+ * Penyedia (OpenAI/Gemini) dipilih oleh penyediaEfektif().
  * @param {{system:string, user:string}} prompt
  * @param {boolean} pakaiJsonMode gunakan JSON mode / structured output
  * @returns {Promise<{isi:string, model:string, penggunaan:object|null}>}
  * @throws {AppError} 400/502/504 bila panggilan gagal
  */
 async function kirimPermintaanLLM(prompt, pakaiJsonMode) {
+  const k = konfigLlm();
   const pengendali = new AbortController();
-  const pewaktu = setTimeout(() => pengendali.abort(), LLM_TIMEOUT_MS);
+  const pewaktu = setTimeout(() => pengendali.abort(), k.timeoutMs);
 
   try {
-    return providerAktif() === 'gemini'
+    return k.penyedia === 'gemini'
       ? await panggilApiGemini(prompt, pakaiJsonMode, pengendali.signal)
       : await panggilApiOpenAI(prompt, pakaiJsonMode, pengendali.signal);
   } catch (err) {
     if (err instanceof AppError) throw err;   // galat dari penyedia -> teruskan
     if (err.name === 'AbortError') {
-      throw new AppError(504, `Panggilan API LLM melebihi batas waktu ${LLM_TIMEOUT_MS} ms.`);
+      throw new AppError(504, `Panggilan API LLM melebihi batas waktu ${k.timeoutMs} ms.`);
     }
     throw new AppError(502,
-      `Gagal menghubungi layanan LLM di ${LLM_BASE_URL} (${err.message}).`);
+      `Gagal menghubungi layanan LLM di ${k.endpoint} (${err.message}).`);
   } finally {
     clearTimeout(pewaktu);
   }
@@ -802,22 +916,24 @@ async function kirimPermintaanLLM(prompt, pakaiJsonMode) {
 
 /** Panggilan OpenAI API (termasuk penyedia kompatibel): POST {base}/chat/completions. */
 async function panggilApiOpenAI(prompt, pakaiJsonMode, signal) {
+  const k = konfigLlm();
   const muatan = {
-    model: LLM_MODEL_NAME,
+    model: k.model,
     messages: [
       { role: 'system', content: prompt.system },
       { role: 'user', content: prompt.user },
     ],
-    temperature: LLM_TEMPERATURE,
+    temperature: k.suhu,
+    max_tokens: k.maxToken,
   };
   if (pakaiJsonMode) muatan.response_format = { type: 'json_object' }; // JSON mode
 
-  const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+  const res = await fetch(alamatOpenAI(k), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      Authorization: `Bearer ${LLM_API_KEY}`, // kunci API hanya dipakai di backend
+      Authorization: `Bearer ${k.apiKey}`, // kunci API hanya dipakai di backend
     },
     body: JSON.stringify(muatan),
     signal,
@@ -843,34 +959,35 @@ async function panggilApiOpenAI(prompt, pakaiJsonMode, signal) {
 
   return {
     isi: String(isi),
-    model: data.model || LLM_MODEL_NAME,
+    model: data.model || k.model,
     penggunaan: data.usage || null,
   };
 }
 
 /** Panggilan Gemini API: POST {base}/models/{model}:generateContent. */
 async function panggilApiGemini(prompt, pakaiJsonMode, signal) {
-  const generationConfig = { temperature: LLM_TEMPERATURE };
+  const k = konfigLlm();
+  const generationConfig = {
+    temperature: k.suhu,
+    maxOutputTokens: k.maxToken,
+  };
   if (pakaiJsonMode) generationConfig.responseMimeType = 'application/json'; // JSON mode
 
-  const res = await fetch(
-    `${LLM_BASE_URL}/models/${encodeURIComponent(LLM_MODEL_NAME)}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        // Kunci dikirim lewat header (bukan query string) agar tidak bocor ke log URL.
-        'x-goog-api-key': LLM_API_KEY,
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: prompt.system }] },
-        contents: [{ role: 'user', parts: [{ text: prompt.user }] }],
-        generationConfig,
-      }),
-      signal,
+  const res = await fetch(alamatGemini(k), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      // Kunci dikirim lewat header (bukan query string) agar tidak bocor ke log URL.
+      'x-goog-api-key': k.apiKey,
     },
-  );
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: prompt.system }] },
+      contents: [{ role: 'user', parts: [{ text: prompt.user }] }],
+      generationConfig,
+    }),
+    signal,
+  });
 
   const isiRespons = await res.text();
   if (!res.ok) throw galatDariPenyedia(res.status, isiRespons);
@@ -904,7 +1021,7 @@ async function panggilApiGemini(prompt, pakaiJsonMode, signal) {
       ? null : data.usageMetadata.totalTokenCount,
   } : null;
 
-  return { isi, model: data.modelVersion || LLM_MODEL_NAME, penggunaan };
+  return { isi, model: data.modelVersion || k.model, penggunaan };
 }
 
 /**
@@ -1060,7 +1177,7 @@ async function analisisDenganLLM(meta, ekstraksi) {
     hasil,
     info: {
       mode: 'llm',
-      label: `llm-${providerAktif()}-v1 (${balasan.model})`,
+      label: `llm-${penyediaEfektif()}-v1 (${balasan.model})`,
       model: balasan.model,
       endpoint_host: hostLLM(),
       json_mode: balasan.json_mode,
@@ -1165,11 +1282,12 @@ function lengkapiAnalisis(hasilInti, meta, ekstraksi) {
 async function analisisDokumen(meta, ekstraksi) {
   /* ---- LLM belum dikonfigurasi ---- */
   if (!llmSiap()) {
-    const pesan = 'Analisis AI belum dikonfigurasi: LLM_API_KEY belum diisi pada berkas .env.';
+    const pesan = 'Analisis AI belum dikonfigurasi: aktifkan layanan AI dan isi kunci API '
+      + 'pada panel Admin "Pengaturan AI" (data/ai-config.json), atau isi LLM_API_KEY pada berkas .env.';
     if (!LLM_FALLBACK_SIMULASI) {
       console.error(`[llm] ${pesan}`);
       throw new AppError(500, pesan, {
-        penyedia: providerAktif(), model: LLM_MODEL_NAME, llm_dikonfigurasi: false,
+        penyedia: penyediaEfektif(), model: konfigLlm().model, llm_dikonfigurasi: false,
       });
     }
     console.warn(`[llm] ${pesan} -> memakai fallback simulasi (LLM_FALLBACK_SIMULASI=true).`);
@@ -1195,8 +1313,8 @@ async function analisisDokumen(meta, ekstraksi) {
       throw new AppError(500,
         `Analisis AI gagal: ${sebab}`,
         {
-          penyedia: providerAktif(),
-          model: LLM_MODEL_NAME,
+          penyedia: penyediaEfektif(),
+          model: konfigLlm().model,
           status_llm: err.statusCode || null,
           ...(err.detail ? { detail_llm: err.detail } : {}),
         });
@@ -1391,22 +1509,26 @@ const router = express.Router();
 
 /* -------------------------- GET /api/health ------------------------------ */
 router.get('/health', (req, res) => {
+  const k = konfigLlm();
+
   res.json({
     status: 'success',
     service: 'deteksi-plagiarisme-api',
     version: '0.6.0',
     progress: llmSiap() ? '50% (analisis LLM nyata)' : '30% (LLM belum dikonfigurasi)',
     analysis_engine: llmSiap()
-      ? `llm-${providerAktif()}-v1 (${LLM_MODEL_NAME})`
+      ? `llm-${k.penyedia}-v1 (${k.model})`
       : 'simulasi-llm-v1 (fallback)',
     llm: {
       dikonfigurasi: llmSiap(),
-      provider: providerAktif(),
-      model: LLM_MODEL_NAME,
+      provider: k.penyedia,
+      model: k.model,
       base_url_host: hostLLM(),
       json_mode: LLM_JSON_MODE,
       max_kata: LLM_MAX_KATA,
-      timeout_ms: LLM_TIMEOUT_MS,
+      timeout_ms: k.timeoutMs,
+      max_token: k.maxToken,
+      suhu: k.suhu,
       fallback_simulasi: LLM_FALLBACK_SIMULASI,
     },
     ekstraksi_teks: {
@@ -1416,11 +1538,18 @@ router.get('/health', (req, res) => {
     },
     total_hasil: dbHasilAnalisis.length,
     total_pengguna: dbPengguna.length,
+    maks_ukuran_mb: k.maksUkuranMb,
     ai_config: {
       tersimpan: fs.existsSync(AI_CONFIG_FILE),
-      aktif: konfigAi.aktif === true,
-      penyedia: konfigAi.penyedia,
-      model: konfigAi.model,
+      aktif: k.aktif,
+      penyedia: k.penyedia,
+      model: k.model,
+      ambang_tinggi: k.ambangTinggi,
+      ambang_sedang: k.ambangSedang,
+      maks_ukuran_mb: k.maksUkuranMb,
+      simpan_riwayat: k.simpanRiwayat,
+      tampil_sumber: k.tampilSumber,
+      koreksi_otomatis: k.koreksiOtomatis,
     },
     waktu_server: new Date().toISOString(),
   });
@@ -1446,6 +1575,14 @@ async function tanganiUnggah(req, res, next) {
     }
     if (!berkas.size) {
       throw new AppError(400, 'Berkas kosong atau tidak dapat dibaca.');
+    }
+    // Batas ukuran mengikuti panel Admin "Pengaturan AI" (field maksUkuran).
+    const batasMb = konfigLlm().maksUkuranMb;
+    if (berkas.size > batasMb * 1024 * 1024) {
+      throw new AppError(400,
+        `Ukuran berkas ${ukuranTerbaca(berkas.size)} melebihi batas ${batasMb} MB `
+        + 'yang ditetapkan pada panel Pengaturan AI.',
+        { maks_ukuran_mb: batasMb, ukuran_byte: berkas.size });
     }
 
     /* ---- 8.2 Validasi metadata ---- */
@@ -1513,9 +1650,26 @@ async function tanganiUnggah(req, res, next) {
       },
     };
 
-    /* ---- 8.6 Simpan ke memori + berkas JSON ---- */
-    dbHasilAnalisis.unshift(rekaman);
-    simpanRiwayat();
+    /* ---- 8.6 Panel Admin: tampilkan sumber & simpan riwayat ---- */
+    // "Tampilkan sumber kemiripan" (tampilSumber) dimatikan -> rujukan sumber
+    // tidak ikut dikirim ke klien maupun disimpan pada rekaman.
+    const pengaturan = konfigLlm();
+    if (!pengaturan.tampilSumber && Array.isArray(rekaman.flagged_passages)) {
+      rekaman.flagged_passages = rekaman.flagged_passages.map((temuan) => ({
+        ...temuan,
+        source_reference: null,
+      }));
+    }
+
+    /* ---- 8.7 Simpan ke memori + berkas JSON ---- */
+    if (pengaturan.simpanRiwayat) {
+      dbHasilAnalisis.unshift(rekaman);
+      simpanRiwayat();
+    } else {
+      // Riwayat tidak disimpan (panel Admin); hasil tetap dikembalikan ke
+      // pemanggil sehingga halaman hasil masih dapat ditampilkan.
+      console.log('[simpan] simpanRiwayat=false -> hasil tidak dimasukkan ke riwayat.');
+    }
 
     res.status(201).json(rekaman);
   } catch (err) {
@@ -2042,7 +2196,10 @@ router.post('/admin/ai-config', wajibLogin, wajibAdmin, (req, res, next) => {
         // kosong atau tersamar -> kunci lama dipertahankan
       }
     }
-    if (baru.aktif && !String(baru.apiKey || '').length && baru.penyedia !== 'ollama') {
+    // Kunci API wajib tersedia untuk mengaktifkan layanan: boleh dari panel
+    // (data/ai-config.json) maupun dari .env (LLM_API_KEY).
+    if (baru.aktif && !String(baru.apiKey || '').length && !LLM_API_KEY
+        && baru.penyedia !== 'ollama') {
       throw new AppError(400, 'Kunci API wajib diisi sebelum layanan AI diaktifkan.', {
         field: 'apiKey', penyedia: baru.penyedia,
       });
@@ -2096,19 +2253,70 @@ router.post('/admin/ai-config', wajibLogin, wajibAdmin, (req, res, next) => {
   }
 });
 
+/**
+ * Menguji koneksi ke penyedia AI memakai konfigurasi yang tersimpan
+ * (tombol "Uji Koneksi" pada admin-ai.html). Permintaannya sengaja sangat
+ * pendek supaya hemat token: satu pesan kecil yang meminta balasan JSON.
+ * Kegagalan diteruskan sebagai AppError (400/502/504) dengan pesan aman.
+ */
+router.post('/admin/ai-config/test', wajibLogin, wajibAdmin, async (req, res, next) => {
+  try {
+    const k = konfigLlm();
+
+    if (!k.aktif) {
+      throw new AppError(400,
+        'Layanan AI sedang nonaktif. Aktifkan lalu simpan konfigurasi terlebih dahulu.',
+        { field: 'aktif' });
+    }
+    if (k.butuhKunci && !k.apiKey) {
+      throw new AppError(400,
+        'Kunci API belum diisi pada konfigurasi layanan AI.', { field: 'apiKey' });
+    }
+
+    const mulai = Date.now();
+    const keluaran = await panggilLLM({
+      system: 'Anda alat uji koneksi. Balas HANYA dengan JSON: {"ok": true}.',
+      user: 'Balas dengan {"ok": true}.',
+    });
+
+    res.json({
+      status: 'success',
+      terhubung: true,
+      message: 'Layanan AI dapat dihubungi.',
+      catatan: `Model ${keluaran.model} merespons dalam ${Date.now() - mulai} ms `
+        + `(penyedia ${k.penyedia}${k.dariPanel ? ', dari panel Admin' : ', dari .env'}).`,
+      penyedia: k.penyedia,
+      model: keluaran.model,
+      endpoint_host: hostLLM(),
+      durasi_ms: Date.now() - mulai,
+      json_mode: keluaran.json_mode,
+      percobaan: keluaran.percobaan,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.use('/api', router);
 
 /* ==========================================================================
- * 9. PENYAJIAN FILE FRONTEND (upload.html, result.html, dst.)
- *    Sekaligus menjadi "server lokal" sehingga sessionStorage/localStorage
- *    berjalan normal pada origin yang sama.
+ * 9. PENYAJIAN FILE FRONTEND (folder public/)
+ *    Halaman HTML ada di public/index.html, public/upload.html, dan seterusnya;
+ *    root statis diarahkan ke folder itu sehingga URL lama tetap sama
+ *    (mis. http://localhost:3000/upload.html). Sekaligus menjadi "server lokal"
+ *    sehingga sessionStorage/localStorage berjalan normal pada origin yang sama.
  * ======================================================================== */
 
-// Jangan pernah menyajikan berkas internal & data pemeriksaan melalui HTTP statis.
+// Sabuk pengaman tambahan: berkas internal (server.js, package.json, .env,
+// data/) memang sudah berada di luar folder statis, tetapi jalur ini tetap
+// ditolak bila sewaktu-waktu root statis diubah lagi.
 const JALUR_INTERNAL = [
   /^\/data(\/|$)/i,
   /^\/uploads(\/|$)/i,
   /^\/node_modules(\/|$)/i,
+  /^\/tests(\/|$)/i,
+  /^\/logs(\/|$)/i,
+  /^\/docs(\/|$)/i,
   /^\/server\.js$/i,
   /^\/package(-lock)?\.json$/i,
   /^\/\./,
@@ -2121,7 +2329,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.static(ROOT_DIR, {
+app.use(express.static(UI_DIR, {
   index: 'index.html',
   extensions: ['html'],
   dotfiles: 'deny',
@@ -2177,14 +2385,17 @@ const server = app.listen(PORT, HOST, () => {
   console.log(`  CORS origin: ${CORS_ORIGIN}`);
   console.log(`  Berkas .env: ${DOTENV_TERMUAT ? 'dimuat' : 'tidak ada (memakai nilai bawaan)'}`);
   console.log(`  Analisis AI: ${llmSiap()
-    ? `LLM ${providerAktif().toUpperCase()} (${LLM_MODEL_NAME} @ ${hostLLM()}, `
-      + `json_mode=${LLM_JSON_MODE}, maks ${LLM_MAX_KATA} kata, timeout ${LLM_TIMEOUT_MS} ms)`
-    : 'BELUM DIKONFIGURASI — isi LLM_API_KEY pada .env'
+    ? `LLM ${konfigLlm().penyedia.toUpperCase()} (${konfigLlm().model} @ ${hostLLM()}, `
+      + `json_mode=${LLM_JSON_MODE}, maks ${LLM_MAX_KATA} kata, `
+      + `timeout ${konfigLlm().timeoutMs} ms)${konfigLlm().dariPanel ? ' [panel Admin]' : ' [.env]'}`
+    : 'BELUM DIKONFIGURASI — aktifkan layanan AI pada panel Admin atau isi LLM_API_KEY pada .env'
       + (LLM_FALLBACK_SIMULASI ? ' (fallback simulasi aktif)' : '')}`);
   console.log(`  Penyimpanan: ${path.relative(ROOT_DIR, DB_FILE) || DB_FILE}`);
   console.log(`  Pengguna   : ${dbPengguna.length} akun (${path.relative(ROOT_DIR, USERS_FILE)})`);
   console.log(`  Konfig AI  : ${fs.existsSync(AI_CONFIG_FILE)
-    ? `${path.relative(ROOT_DIR, AI_CONFIG_FILE)} (aktif=${konfigAi.aktif === true})`
+    ? `${path.relative(ROOT_DIR, AI_CONFIG_FILE)} (aktif=${konfigLlm().aktif}, `
+      + `ambang ${konfigLlm().ambangSedang}/${konfigLlm().ambangTinggi}, `
+      + `maks ${konfigLlm().maksUkuranMb} MB)`
     : 'belum ada — memakai nilai bawaan .env'}`);
   console.log(`  Autentikasi: token HMAC sesi ${Math.round(AUTH_TTL_MS / 3600000)} jam, `
     + `AUTH_SECRET ${AUTH_SECRET_DARI_ENV ? 'dari .env' : 'acak per proses (sesi hangus saat restart)'}`);

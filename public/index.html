@@ -491,69 +491,68 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Jembatan bersama ke backend: token sesi, fetch, dan format tampilan. -->
+  <script src="js/ippl-api.js"></script>
   <script>
     (function () {
       'use strict';
 
       /* ==================================================================
-       * BERANDA
-       * Menampilkan ringkasan aktivitas lokal dan menyesuaikan navbar
-       * dengan status sesi pengguna. Data pada prototipe ini dibaca dari
-       * localStorage (kunci 'riwayatPemeriksaan'). Saat backend siap,
-       * ganti bagian bertanda [API] dengan pemanggilan API.
+       * BERANDA — RINGKASAN DARI BACKEND
+       * Navbar menyesuaikan status sesi (masuk / belum masuk) dan ringkasan
+       * aktivitas dibaca dari server, bukan lagi dari localStorage:
+       *   GET /api/history?nim=<nim>&limit=200   -> ringkasan pemeriksaan
        * ================================================================== */
 
-      var KUNCI_SESI    = 'sesiPengguna';
-      var KUNCI_RIWAYAT = 'riwayatPemeriksaan';
-
-      function bacaJson(storage, kunci, bawaan) {
-        try {
-          var raw = storage.getItem(kunci);
-          return raw ? JSON.parse(raw) : bawaan;
-        } catch (err) {
-          return bawaan;
-        }
-      }
-
       // ====== Navbar sesuai status sesi ======
-      var sesi = bacaJson(sessionStorage, KUNCI_SESI, null);
+      var sesi     = IPPL.sesi();
+      var sudahMasuk = !!(sesi && IPPL.token());
       var navMasuk = document.getElementById('navMasukItem');
       var navUser  = document.getElementById('navUserItem');
 
-      if (sesi) {
+      if (sudahMasuk) {
         navMasuk.classList.add('d-none');
         navUser.classList.remove('d-none');
-        var navNama = document.getElementById('navNamaPengguna');
-        navNama.textContent = sesi.nama || 'Pengguna';
-        if (sesi.email) navNama.title = sesi.email;
+        IPPL.tampilkanNama('navNamaPengguna', sesi);
 
         document.getElementById('navLogout').addEventListener('click', function (e) {
           e.preventDefault();
-          try { sessionStorage.removeItem(KUNCI_SESI); } catch (err) { /* diabaikan */ }
-          window.location.href = 'login.html';
+          IPPL.keluar('login.html');
         });
       }
 
-      // ====== Ringkasan aktivitas ======
-      // [API] ganti dengan GET /api/history/summary
-      var daftar = bacaJson(localStorage, KUNCI_RIWAYAT, []);
-      if (!Array.isArray(daftar)) daftar = [];
+      // ====== Ringkasan aktivitas (GET /api/history) ======
+      function tulisRingkasan(total, rata, tinggi) {
+        document.getElementById('statTotal').textContent  = String(total);
+        document.getElementById('statRata').textContent   = total ? (rata + '%') : '\u2014';
+        document.getElementById('statTinggi').textContent = String(tinggi);
+        document.getElementById('statTotalKet').textContent = total
+          ? 'Tersimpan di server dan dapat dibuka dari halaman Riwayat.'
+          : (sudahMasuk
+              ? 'Belum ada pemeriksaan yang tercatat pada akun ini.'
+              : 'Masuk terlebih dahulu untuk melihat riwayat pemeriksaanmu.');
+      }
 
-      var selesai = daftar.filter(function (item) {
-        return item && typeof item.skor === 'number' && isFinite(item.skor);
-      });
+      function isiRingkasan(daftar) {
+        var selesai = (daftar || []).filter(function (r) {
+          return r && typeof r.overall_similarity_score === 'number';
+        });
+        var total  = selesai.length;
+        var jumlah = selesai.reduce(function (a, r) { return a + r.overall_similarity_score; }, 0);
+        var rata   = total ? Math.round(jumlah / total) : 0;
+        var tinggi = selesai.filter(function (r) { return r.overall_similarity_score >= 50; }).length;
 
-      var total = selesai.length;
-      var jumlah = selesai.reduce(function (a, item) { return a + item.skor; }, 0);
-      var rata = total ? Math.round(jumlah / total) : 0;
-      var tinggi = selesai.filter(function (item) { return item.skor >= 50; }).length;
+        tulisRingkasan(total, rata, tinggi);
+      }
 
-      document.getElementById('statTotal').textContent = String(total);
-      document.getElementById('statRata').textContent = total ? (rata + '%') : '\u2014';
-      document.getElementById('statTinggi').textContent = String(tinggi);
-      document.getElementById('statTotalKet').textContent = total
-        ? 'Tersimpan di perangkat ini dan dapat dibuka dari halaman Riwayat.'
-        : 'Belum ada pemeriksaan pada perangkat ini.';
+      tulisRingkasan(0, 0, 0);
+
+      var query = { limit: 200 };
+      if (sesi && sesi.nim) query.nim = sesi.nim;
+
+      IPPL.minta('/api/history', { query: query })
+        .then(function (hasil) { isiRingkasan(hasil && hasil.data); })
+        .catch(function () { tulisRingkasan(0, 0, 0); });
     })();
   </script>
 </body>

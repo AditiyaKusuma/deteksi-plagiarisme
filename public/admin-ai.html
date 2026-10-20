@@ -205,12 +205,11 @@
                   </button>
                   <div class="invalid-feedback">API Key minimal 8 karakter untuk penyedia layanan daring.</div>
                 </div>
-                <div class="alert alert-warning py-2 small mt-2 mb-0">
-                  <i class="bi bi-shield-exclamation me-1"></i>
-                  <strong>Perhatian keamanan:</strong> pada prototipe ini API Key disimpan di
-                  <em>localStorage</em> peramban sehingga <strong>tidak aman</strong>. Pada implementasi
-                  sebenarnya, API Key harus disimpan di sisi server (variabel lingkungan) dan
-                  <strong>tidak boleh</strong> dicatat pada log atau ditampilkan kembali ke peramban.
+                <div class="alert alert-success py-2 small mt-2 mb-0" id="catatanApiKey">
+                  <i class="bi bi-shield-check me-1"></i>
+                  <strong>Kunci disimpan di server:</strong> API Key dikirim hanya sekali saat Anda
+                  menyimpan, disimpan di <em>data/ai-config.json</em> pada server, dan tidak pernah
+                  dibaca kembali oleh peramban.
                 </div>
               </div>
 
@@ -379,11 +378,12 @@
             <div class="form-check form-switch">
               <input class="form-check-input" type="checkbox" id="simulasiGagalSimpan">
               <label class="form-check-label small" for="simulasiGagalSimpan">
-                Simulasikan kegagalan penyimpanan konfigurasi
+                Batalkan permintaan saat menyimpan (simulasi kegagalan)
               </label>
             </div>
             <p class="small text-secondary mb-0 mt-1">
-              Dipakai untuk mendemokan kegagalan penyimpanan konfigurasi.
+              Bila dicentang, permintaan penyimpanan ke server dibatalkan sebelum dikirim
+              sehingga dapat dipakai untuk mendemokan kegagalan penyimpanan konfigurasi.
             </p>
           </div>
         </div>
@@ -396,6 +396,8 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Helper bersama: alamat API, sesi, token Bearer, dan pemanggilan API nyata. -->
+  <script src="js/ippl-api.js"></script>
   <script>
     (function () {
       'use strict';
@@ -416,13 +418,11 @@
        *   1. Konfigurasi tidak valid -> tampilkan pesan kesalahan.
        *   2. Konfigurasi gagal disimpan -> minta Admin menyimpan kembali.
        *
-       * Konfigurasi disimpan di localStorage 'konfigurasiAI' (mewakili D4).
-       * [API] ganti muatKonfigurasi()/simpanKonfigurasi() dengan
-       *       GET /api/admin/ai-config dan PUT /api/admin/ai-config
+       * Konfigurasi kini disimpan di sisi server (data/ai-config.json, mewakili D4)
+       * melalui GET /api/admin/ai-config dan POST /api/admin/ai-config. Kunci API
+       * tidak pernah dikirim utuh ke peramban: server hanya membalas bentuk
+       * tersamarnya (mis. "********abcd").
        * ================================================================== */
-
-      var KUNCI_SESI_ADMIN = 'sesiAdmin';
-      var KUNCI_KONFIG     = 'konfigurasiAI';
 
       // Guard admin. Set false bila ingin halaman bisa dibuka tanpa autentikasi Admin.
       var WAJIB_LOGIN_ADMIN = true;
@@ -437,6 +437,8 @@
         lainnya:   []
       };
 
+      // Nilai bawaan untuk tombol "Kembalikan Bawaan" (isi form saja, belum
+      // disimpan). Nilai baku yang sebenarnya dipegang backend (konfigAiBawaan).
       var KONFIG_BAWAAN = {
         aktif: true,
         penyedia: 'openai',
@@ -457,24 +459,14 @@
       };
 
       /* ---------------- Util ---------------- */
-      function bacaJson(storage, kunci, bawaan) {
-        try {
-          var raw = storage.getItem(kunci);
-          return raw ? JSON.parse(raw) : bawaan;
-        } catch (err) {
-          return bawaan;
-        }
-      }
+      /** Konfigurasi terakhir yang diterima dari server (untuk ringkasan status). */
+      var konfigurasiServer = null;
 
-      function storageTersedia(storage) {
-        try {
-          storage.setItem('__uji', '1');
-          storage.removeItem('__uji');
-          return true;
-        } catch (err) {
-          return false;
-        }
-      }
+      /** Status uji koneksi terakhir (disimpan di memori, tidak di peramban). */
+      var statusKoneksiTerakhir = null;
+
+      /** true bila server sudah menyimpan kunci API (kolom boleh dikosongkan). */
+      var adaKunciTersimpan = false;
 
       function tanggalRingkas(iso) {
         try {
@@ -493,21 +485,19 @@
       }
 
       /* ---------------- Sesi admin & guard ---------------- */
-      var sesi = bacaJson(sessionStorage, KUNCI_SESI_ADMIN, null);
-
-      if (WAJIB_LOGIN_ADMIN && !sesi && storageTersedia(sessionStorage)) {
-        window.location.replace('login-admin.html?next=admin-ai.html');
-        return;
-      }
+      // Halaman ini hanya untuk Administrator. Bila belum masuk (atau bukan
+      // Administrator), IPPL.wajibMasuk() mengarahkan ke login-admin.html
+      // dengan parameter ?next= agar kembali ke halaman ini setelah berhasil masuk.
+      var sesi = IPPL.wajibMasuk({ peran: 'Administrator' });
+      if (!sesi) return; // sudah dialihkan ke halaman masuk
 
       var navNama = document.getElementById('navNamaAdmin');
-      navNama.textContent = (sesi && sesi.nama) ? sesi.nama : 'Admin';
-      if (sesi && sesi.email) navNama.title = sesi.email + ' \u00b7 ' + (sesi.peran || 'Administrator');
+      navNama.textContent = (sesi.nama) ? sesi.nama : 'Admin';
+      if (sesi.email) navNama.title = sesi.email + ' \u00b7 ' + (sesi.peran || 'Administrator');
 
       document.getElementById('navLogout').addEventListener('click', function (e) {
         e.preventDefault();
-        try { sessionStorage.removeItem(KUNCI_SESI_ADMIN); } catch (err) { /* diabaikan */ }
-        window.location.href = 'login-admin.html';
+        IPPL.keluar('login-admin.html');
       });
 
       /* ---------------- Elemen ---------------- */
@@ -530,6 +520,7 @@
       var btnSimpan     = document.getElementById('btnSimpan');
       var simulasiGagal = document.getElementById('simulasiGagalSimpan');
       var daftarModel   = document.getElementById('daftarModel');
+      var catatanApiKey = document.getElementById('catatanApiKey');
 
       /* ---------------- Alert ---------------- */
       function tampilkanAlert(jenis, judul, isi) {
@@ -567,6 +558,11 @@
       }
 
       function terapkanKonfigurasi(k) {
+        // Server hanya membalas kunci dalam bentuk tersamar. Nilai tersamar itu
+        // dibiarkan apa adanya di kolom: bila Admin tidak mengubahnya, backend
+        // tetap memakai kunci lama (lihat aturan field "apiKey" pada server.js).
+        adaKunciTersimpan = (k.apiKey_tersimpan === true) || String(k.apiKey || '').length > 0;
+
         inputAktif.checked    = k.aktif !== false;
         inputPenyedia.value   = k.penyedia || 'openai';
         inputModel.value      = k.model || '';
@@ -582,9 +578,27 @@
         inputSumber.checked   = k.tampilSumber !== false;
         inputKoreksi.checked  = k.koreksiOtomatis === true;
 
+        perbaruiCatatanApiKey();
         isiDaftarModel(inputPenyedia.value);
         formAi.classList.remove('was-validated');
         perbaruiRingkasan(k);
+      }
+
+      /** Keterangan singkat di bawah kolom API Key (kunci tersimpan / belum). */
+      function perbaruiCatatanApiKey() {
+        if (!catatanApiKey) return;
+        if (adaKunciTersimpan) {
+          catatanApiKey.className = 'alert alert-success py-2 small mt-2 mb-0';
+          catatanApiKey.innerHTML = '<i class="bi bi-shield-check me-1"></i>'
+            + '<strong>Kunci API tersimpan di server.</strong> Biarkan kolom di atas apa adanya '
+            + 'untuk tetap memakai kunci lama, atau isi dengan kunci baru (minimal 8 karakter) '
+            + 'untuk menggantinya.';
+        } else {
+          catatanApiKey.className = 'alert alert-warning py-2 small mt-2 mb-0';
+          catatanApiKey.innerHTML = '<i class="bi bi-shield-exclamation me-1"></i>'
+            + '<strong>Belum ada kunci tersimpan.</strong> Isi kolom di atas (minimal 8 karakter); '
+            + 'kunci dikirim ke server dan tidak pernah dibalas kembali ke peramban.';
+        }
       }
 
       function ambilDariForm() {
@@ -640,16 +654,57 @@
           badgeKonfig.textContent = 'Bawaan';
         }
 
-        document.getElementById('statKoneksi').textContent = k && k.statusKoneksi ? k.statusKoneksi : 'Belum diuji';
+        document.getElementById('statKoneksi').textContent = statusKoneksiTerakhir || 'Belum diuji';
         document.getElementById('infoDiperbaruiOleh').textContent = (k && k.diperbaruiOleh) ? k.diperbaruiOleh : '\u2014';
       }
 
       /* ---------------- Muat konfigurasi (langkah 1-2) ---------------- */
-      // [API] ganti dengan GET /api/admin/ai-config
+      /**
+       * Mengubah bentuk balasan GET /api/admin/ai-config menjadi bentuk yang
+       * dipakai form (mis. diperbarui_oleh -> diperbaruiOleh).
+       */
+      function dariBalasanServer(konfig, tersimpan) {
+        var k = konfig || {};
+        return {
+          aktif: k.aktif === true,
+          penyedia: k.penyedia || 'openai',
+          model: k.model || '',
+          endpoint: k.endpoint || '',
+          apiKey: k.apiKey || '',
+          apiKey_tersimpan: k.apiKey_tersimpan === true,
+          suhu: k.suhu,
+          maxToken: k.maxToken,
+          timeout: k.timeout,
+          ambangTinggi: k.ambangTinggi,
+          ambangSedang: k.ambangSedang,
+          maksUkuran: k.maksUkuran,
+          simpanRiwayat: k.simpanRiwayat !== false,
+          tampilSumber: k.tampilSumber !== false,
+          koreksiOtomatis: k.koreksiOtomatis === true,
+          diperbarui: tersimpan ? (k.diperbarui || null) : null,
+          diperbaruiOleh: k.diperbarui_oleh || null
+        };
+      }
+
+      /** Memuat konfigurasi AI dari server (GET /api/admin/ai-config). */
       function muatKonfigurasi() {
-        var k = bacaJson(localStorage, KUNCI_KONFIG, null);
-        if (!k || typeof k !== 'object') k = KONFIG_BAWAAN;
-        terapkanKonfigurasi(k);
+        btnSimpan.disabled = true;
+
+        return IPPL.minta('/api/admin/ai-config').then(function (balasan) {
+          konfigurasiServer = dariBalasanServer(balasan.config, balasan.tersimpan === true);
+          statusKoneksiTerakhir = null;
+          terapkanKonfigurasi(konfigurasiServer);
+        }).catch(function (err) {
+          // Kegagalan memuat: form tetap dapat diisi memakai nilai bawaan.
+          konfigurasiServer = null;
+          terapkanKonfigurasi(KONFIG_BAWAAN);
+          perbaruiRingkasan(null);
+          tampilkanAlert('danger', 'Gagal memuat konfigurasi dari server',
+            IPPL.esc(IPPL.pesanGalat(err)) + ' Form diisi dengan nilai bawaan; '
+            + 'perubahan hanya akan terpakai bila penyimpanan berhasil.');
+        }).then(function () {
+          btnSimpan.disabled = false;
+        });
       }
 
       /* ---------------- Validasi (langkah 5) ---------------- */
@@ -665,9 +720,12 @@
         inputEndpoint.setCustomValidity(endpointOk ? '' : 'Alamat API harus berupa URL http/https yang valid.');
         if (!endpointOk) salah.push('Alamat API harus berupa URL http/https yang valid.');
 
-        // API Key wajib untuk penyedia layanan daring.
-        var daring = inputPenyedia.value !== 'ollama';
-        var keyOk = !daring || inputApiKey.value.trim().length >= 8;
+        // API Key wajib untuk penyedia layanan daring, KECUALI server sudah
+        // menyimpan kunci lama dan kolom dibiarkan kosong / masih tersamar.
+        var daring    = inputPenyedia.value !== 'ollama';
+        var isiKey    = inputApiKey.value.trim();
+        var pakaiLama = adaKunciTersimpan && (isiKey === '' || isiKey.charAt(0) === '*');
+        var keyOk     = !daring || pakaiLama || isiKey.length >= 8;
         inputApiKey.setCustomValidity(keyOk ? '' : 'API Key minimal 8 karakter.');
         if (!keyOk) salah.push('API Key wajib diisi minimal 8 karakter untuk penyedia layanan daring.');
 
@@ -703,17 +761,17 @@
       }
 
       /* ---------------- Simpan konfigurasi (langkah 6-7) ---------------- */
+      /**
+       * Mengirim konfigurasi ke server: POST /api/admin/ai-config.
+       * Exception 2: kegagalan penyimpanan — permintaan dibatalkan lewat alat
+       * bantu demo, server menolak, atau jaringan bermasalah.
+       * @returns {Promise<object>} balasan server (memuat config tersimpan)
+       */
       function simpanKonfigurasi(k) {
-        // Exception 2: kegagalan penyimpanan (disimulasikan lewat alat bantu demo).
-        if (simulasiGagal.checked) return false;
-
-        // [API] ganti dengan PUT /api/admin/ai-config
-        try {
-          localStorage.setItem(KUNCI_KONFIG, JSON.stringify(k));
-          return true;
-        } catch (err) {
-          return false;
+        if (simulasiGagal.checked) {
+          return Promise.reject(new Error('Permintaan penyimpanan dibatalkan (alat bantu demo).'));
         }
+        return IPPL.minta('/api/admin/ai-config', { metode: 'POST', body: k });
       }
 
       formAi.addEventListener('submit', function (e) {
@@ -731,44 +789,52 @@
         btnSimpan.disabled = true;
         btnSimpan.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan\u2026';
 
-        window.setTimeout(function () {
-          var k = ambilDariForm();
-          k.diperbarui = new Date().toISOString();
-          k.diperbaruiOleh = (sesi && sesi.nama) ? sesi.nama : 'Admin';
-          k.statusKoneksi = null;
+        var k = ambilDariForm();
 
-          var ok = simpanKonfigurasi(k);
+        simpanKonfigurasi(k).then(function (balasan) {
+          var tersimpan = dariBalasanServer(balasan && balasan.config, true);
+          konfigurasiServer = tersimpan;
+          terapkanKonfigurasi(tersimpan);
+          statusKoneksiTerakhir = null;
+          perbaruiRingkasan(tersimpan);
 
-          btnSimpan.disabled = false;
-          btnSimpan.innerHTML = '<i class="bi bi-save me-2"></i>Simpan Konfigurasi';
-
-          if (!ok) {
-            // Exception 2: konfigurasi gagal disimpan.
-            tampilkanAlert('danger', 'Konfigurasi gagal disimpan',
-              'Perubahan belum tersimpan. Silakan lakukan penyimpanan kembali. Bila masalah berlanjut, ' +
-              'periksa penyimpanan pada peramban (cookie/site data).');
-            return;
-          }
-
-          terapkanKonfigurasi(k);
-          perbaruiRingkasan(k);
-
-          var pesanTambahan = k.aktif === false
+          var pesanTambahan = tersimpan.aktif === false
             ? 'Layanan AI saat ini <strong>nonaktif</strong>, sehingga pemeriksaan dokumen tidak dapat dijalankan.'
-            : 'Pemeriksaan dokumen akan memakai model <strong>' + k.model + '</strong> dari ' + labelPenyedia(k.penyedia) + '.';
+            : 'Pemeriksaan dokumen akan memakai model <strong>' + IPPL.esc(tersimpan.model)
+              + '</strong> dari ' + labelPenyedia(tersimpan.penyedia) + '.';
 
           tampilkanAlert('success', 'Konfigurasi berhasil disimpan', pesanTambahan);
-        }, 500);
+        }).catch(function (err) {
+          // Exception 2: konfigurasi gagal disimpan.
+          tampilkanAlert('danger', 'Konfigurasi gagal disimpan',
+            'Perubahan belum tersimpan di server. ' + IPPL.esc(IPPL.pesanGalat(err))
+            + ' Silakan lakukan penyimpanan kembali.');
+        }).then(function () {
+          btnSimpan.disabled = false;
+          btnSimpan.innerHTML = '<i class="bi bi-save me-2"></i>Simpan Konfigurasi';
+        });
       });
 
-      /* ---------------- Uji koneksi (simulasi status layanan) ---------------- */
+      /* ---------------- Uji koneksi (permintaan nyata ke layanan AI) ---------------- */
+      /** Memperbarui badge & ringkasan status koneksi layanan AI. */
+      function tandaiKoneksi(berhasil) {
+        var status = berhasil ? 'Terhubung' : 'Tidak terhubung';
+        statusKoneksiTerakhir = status;
+
+        var badgeKoneksi = document.getElementById('badgeKoneksi');
+        badgeKoneksi.className = 'badge ' + (berhasil
+          ? 'bg-success-subtle text-success-emphasis border border-success'
+          : 'bg-danger-subtle text-danger-emphasis border border-danger');
+        badgeKoneksi.textContent = status;
+        document.getElementById('statKoneksi').textContent = status;
+      }
+
       document.getElementById('btnUji').addEventListener('click', function () {
         sembunyikanAlert();
 
-        var k = bacaJson(localStorage, KUNCI_KONFIG, null) || ambilDariForm();
-        if (k.aktif === false) {
+        if (konfigurasiServer && konfigurasiServer.aktif === false) {
           tampilkanAlert('danger', 'Layanan AI sedang nonaktif',
-            'Aktifkan layanan AI terlebih dahulu sebelum menguji koneksi.');
+            'Aktifkan layanan AI lalu simpan konfigurasi terlebih dahulu sebelum menguji koneksi.');
           return;
         }
 
@@ -776,47 +842,47 @@
         tombol.disabled = true;
         tombol.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menguji\u2026';
 
-        // [API] ganti dengan GET /api/admin/ai-config/test
-        window.setTimeout(function () {
-          tombol.disabled = false;
-          tombol.innerHTML = '<i class="bi bi-plug me-2"></i>Uji Koneksi';
-
-          var adaKey = (k.apiKey || '').length >= 8;
-          var berhasil = adaKey && k.penyedia !== 'ollama';
-          var badgeKoneksi = document.getElementById('badgeKoneksi');
-          var status = berhasil ? 'Terhubung' : 'Tidak terhubung';
-
-          badgeKoneksi.className = 'badge ' + (berhasil
-            ? 'bg-success-subtle text-success-emphasis border border-success'
-            : 'bg-danger-subtle text-danger-emphasis border border-danger');
-          badgeKoneksi.textContent = status;
-          document.getElementById('statKoneksi').textContent = status;
-
-          // Simpan status koneksi terakhir bila konfigurasi sudah pernah disimpan.
-          var tersimpan = bacaJson(localStorage, KUNCI_KONFIG, null);
-          if (tersimpan) {
-            tersimpan.statusKoneksi = status;
-            try { localStorage.setItem(KUNCI_KONFIG, JSON.stringify(tersimpan)); } catch (err) { /* diabaikan */ }
-          }
-
-          if (berhasil) {
+        // Uji nyata: server mengirim satu permintaan kecil ke penyedia AI memakai
+        // konfigurasi yang tersimpan (POST /api/admin/ai-config/test).
+        IPPL.minta('/api/admin/ai-config/test', { metode: 'POST', timeout: 45000 })
+          .then(function (balasan) {
+            tandaiKoneksi(true);
             tampilkanAlert('success', 'Uji koneksi berhasil',
-              'Layanan AI dapat dihubungi pada ' + tanggalRingkas(new Date().toISOString()) + '.');
-          } else {
+              'Layanan AI merespons pada ' + tanggalRingkas(new Date().toISOString()) + '. '
+              + IPPL.esc((balasan && balasan.catatan) || ''));
+          })
+          .catch(function (err) {
+            tandaiKoneksi(false);
             tampilkanAlert('danger', 'Uji koneksi gagal',
-              'Layanan AI tidak dapat dihubungi. Periksa API Key, alamat API, dan koneksi internet aplikasi.');
-          }
-        }, 900);
+              IPPL.esc(IPPL.pesanGalat(err))
+              + ' Periksa API Key, alamat API, dan koneksi internet aplikasi.');
+          })
+          .then(function () {
+            tombol.disabled = false;
+            tombol.innerHTML = '<i class="bi bi-plug me-2"></i>Uji Koneksi';
+          });
       });
 
       /* ---------------- Kembalikan bawaan ---------------- */
       document.getElementById('btnResetBawaan').addEventListener('click', function () {
         sembunyikanAlert();
         // Tidak memakai confirm() bawaan browser supaya tampilan tetap konsisten.
-        terapkanKonfigurasi(KONFIG_BAWAAN);
+        // Kunci yang sudah tersimpan di server tidak ikut dikosongkan agar
+        // "kembalikan bawaan" hanya mengubah parameter, bukan menghapus kunci.
+        var bawaan = {};
+        for (var kunci in KONFIG_BAWAAN) {
+          if (Object.prototype.hasOwnProperty.call(KONFIG_BAWAAN, kunci)) bawaan[kunci] = KONFIG_BAWAAN[kunci];
+        }
+        if (konfigurasiServer) {
+          bawaan.apiKey = konfigurasiServer.apiKey;
+          bawaan.apiKey_tersimpan = konfigurasiServer.apiKey_tersimpan;
+        }
+
+        terapkanKonfigurasi(bawaan);
+        statusKoneksiTerakhir = null;
         perbaruiRingkasan(null);
         tampilkanAlert('success', 'Form dikembalikan ke konfigurasi bawaan',
-          'Perubahan belum tersimpan. Klik <strong>Simpan Konfigurasi</strong> untuk menerapkan.');
+          'Perubahan belum tersimpan di server. Klik <strong>Simpan Konfigurasi</strong> untuk menerapkan.');
       });
 
       /* ---------------- Interaksi kecil ---------------- */
@@ -843,16 +909,17 @@
       });
 
       inputAktif.addEventListener('change', function () {
-        var k = bacaJson(localStorage, KUNCI_KONFIG, null);
-        if (k) {
-          k.aktif = inputAktif.checked;
-          k.statusKoneksi = k.statusKoneksi || null;
-          perbaruiRingkasan(k);
+        // Hanya memperbarui ringkasan di layar; perubahan baru berlaku setelah
+        // Admin menekan "Simpan Konfigurasi" (POST /api/admin/ai-config).
+        if (konfigurasiServer) {
+          konfigurasiServer.aktif = inputAktif.checked;
+          perbaruiRingkasan(konfigurasiServer);
         } else {
-          document.getElementById('statKoneksi').textContent = 'Belum diuji';
+          document.getElementById('statKoneksi').textContent = statusKoneksiTerakhir || 'Belum diuji';
         }
       });
 
+      // Muat konfigurasi dari server sebagai langkah pertama halaman dibuka.
       muatKonfigurasi();
     })();
   </script>

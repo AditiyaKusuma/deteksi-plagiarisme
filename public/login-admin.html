@@ -180,28 +180,29 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Jembatan bersama ke backend: token sesi, fetch, dan format tampilan. -->
+  <script src="js/ippl-api.js"></script>
   <script>
     (function () {
       'use strict';
 
       /* ==================================================================
-       * UC-09 MELAKUKAN AUTENTIKASI AKUN (ADMIN)
+       * AUTENTIKASI AKUN ADMINISTRATOR (BACKEND NYATA)
        *
        * Precondition SRS: "Akun Admin telah tersedia" -- karena itu tidak
-       * ada fitur pendaftaran Admin. Daftar akun Admin pada prototipe ini
-       * dibaca dari localStorage 'akunAdmin' dan digabung dengan akun
-       * bawaan di bawah.
+       * ada fitur pendaftaran Admin. Akun Admin diperiksa langsung oleh
+       * server berdasarkan data/users.json:
+       *   POST /api/auth/login { email, password, peran: 'Administrator' }
        *
-       * [API] Saat backend siap, ganti dengan POST /api/auth/admin/login
-       *       { email, password }
+       * Field "peran" membuat server menolak akun yang bukan Administrator,
+       * sehingga halaman ini tidak dapat dilewati dengan akun Mahasiswa.
        * ================================================================== */
 
-      var KUNCI_AKUN_ADMIN = 'akunAdmin';
-      var KUNCI_SESI_ADMIN = 'sesiAdmin';
       var KUNCI_INGAT      = 'emailAdminTerakhir';
       var RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-      // Akun Admin bawaan (precondition UC-09: akun telah tersedia).
+      // Akun Admin contoh yang sudah di-seed server (data/users.json)
+      // supaya halaman dapat langsung dicoba: admin@example.com / admin123.
       var AKUN_ADMIN_BAWAAN = [
         {
           nama: 'Administrator Sistem',
@@ -215,30 +216,6 @@
       var HALAMAN_ADMIN = ['admin-pengguna.html', 'admin-dokumen.html', 'admin-riwayat.html', 'admin-ai.html'];
 
       // ====== util ======
-      function bacaJson(storage, kunci, bawaan) {
-        try {
-          var raw = storage.getItem(kunci);
-          return raw ? JSON.parse(raw) : bawaan;
-        } catch (err) {
-          return bawaan;
-        }
-      }
-
-      function tulisJson(storage, kunci, nilai) {
-        try {
-          storage.setItem(kunci, JSON.stringify(nilai));
-          return true;
-        } catch (err) {
-          return false;
-        }
-      }
-
-      function daftarAdmin() {
-        var tambahan = bacaJson(localStorage, KUNCI_AKUN_ADMIN, []);
-        if (!Array.isArray(tambahan)) tambahan = [];
-        return AKUN_ADMIN_BAWAAN.concat(tambahan);
-      }
-
       function tujuanSetelahMasuk() {
         var next = null;
         try {
@@ -295,7 +272,7 @@
         inputEmail.focus();
       });
 
-      // ====== autentikasi (UC-09) ======
+      // ====== autentikasi Administrator — POST /api/auth/login ======
       formAdmin.addEventListener('submit', function (e) {
         e.preventDefault();
         sembunyikanAlert();
@@ -315,57 +292,46 @@
         var email = inputEmail.value.trim().toLowerCase();
         var sandi = inputPass.value;
 
-        // [API] ganti blok pencocokan lokal ini dengan POST /api/auth/admin/login
-        var admin = daftarAdmin().filter(function (a) {
-          return String(a.email).toLowerCase() === email;
-        })[0];
-
-        // Exception 2: akun Admin tidak ditemukan.
-        if (!admin) {
-          tampilkanAlert('<i class="bi bi-person-x me-1"></i>Akun Admin tidak ditemukan. ' +
-                         'Periksa kembali data akun yang dimasukkan.', 'danger');
-          inputEmail.select();
-          return;
-        }
-
-        // Exception 1: data akun tidak sesuai -> akses ditolak.
-        if (admin.password !== sandi) {
-          tampilkanAlert('<i class="bi bi-exclamation-triangle me-1"></i>Data akun tidak sesuai. ' +
-                         'Periksa kembali email dan password.', 'danger');
-          inputPass.select();
-          return;
-        }
-
         btnMasuk.disabled = true;
         btnMasuk.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memverifikasi\u2026';
 
-        var sesi = {
-          nama: admin.nama,
-          email: admin.email,
-          peran: admin.peran || 'Administrator',
-          masuk: new Date().toISOString()
-        };
+        // Field "peran" membuat server menolak akun yang bukan Administrator
+        // (HTTP 403) maupun akun yang datanya tidak sesuai (HTTP 401).
+        IPPL.masuk(email, sandi, 'Administrator').then(function (data) {
+          try {
+            if (ingatEmail.checked) {
+              localStorage.setItem(KUNCI_INGAT, email);
+            } else {
+              localStorage.removeItem(KUNCI_INGAT);
+            }
+          } catch (err) { /* diabaikan: hanya fitur kenyamanan */ }
 
-        var tersimpan = tulisJson(sessionStorage, KUNCI_SESI_ADMIN, sesi);
-        if (!tersimpan) {
+          tampilkanAlert('<i class="bi bi-shield-check me-1"></i>Berhasil masuk sebagai '
+            + IPPL.esc((data.user && data.user.nama) || 'Administrator') + '.', 'success');
+
+          window.setTimeout(function () {
+            window.location.href = tujuanSetelahMasuk();
+          }, 450);
+        }).catch(function (err) {
           btnMasuk.disabled = false;
           btnMasuk.innerHTML = '<i class="bi bi-box-arrow-in-right me-2"></i>Masuk sebagai Admin';
-          tampilkanAlert('<i class="bi bi-exclamation-triangle me-1"></i>Penyimpanan browser diblokir sehingga ' +
-                         'sesi Admin tidak dapat dibuat. Aktifkan cookie/site data lalu coba lagi.', 'danger');
-          return;
-        }
 
-        try {
-          if (ingatEmail.checked) {
-            localStorage.setItem(KUNCI_INGAT, admin.email);
-          } else {
-            localStorage.removeItem(KUNCI_INGAT);
+          if (err.status === 403) {
+            // Exception 2: akun ada tetapi bukan Administrator / sedang nonaktif.
+            tampilkanAlert('<i class="bi bi-person-x me-1"></i>' + IPPL.esc(err.message), 'danger');
+            inputEmail.select();
+            return;
           }
-        } catch (err) { /* diabaikan: hanya fitur kenyamanan */ }
-
-        window.setTimeout(function () {
-          window.location.href = tujuanSetelahMasuk();
-        }, 450);
+          if (err.status === 401) {
+            // Exception 1: email atau password tidak sesuai -> akses ditolak.
+            tampilkanAlert('<i class="bi bi-exclamation-triangle me-1"></i>'
+              + IPPL.esc(err.message), 'danger');
+            inputPass.select();
+            return;
+          }
+          tampilkanAlert('<i class="bi bi-exclamation-triangle me-1"></i>'
+            + IPPL.esc(IPPL.pesanGalat(err)), 'danger');
+        });
       });
 
       inputEmail.addEventListener('input', function () { inputEmail.setCustomValidity(''); });

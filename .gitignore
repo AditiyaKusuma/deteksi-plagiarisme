@@ -1,0 +1,38 @@
+# ============================================================================
+#  .gitignore — Aplikasi Deteksi Plagiarisme Proposal & Laporan Tugas Akhir
+#  (NIM 11241002)
+#
+#  Catatan: berkas yang sudah terlanjur masuk ke git (mis. node_modules) tidak
+#  otomatis keluar hanya karena didaftarkan di sini; perlu "git rm -r --cached"
+#  sekali saja bila ingin dibersihkan dari riwayat commit berikutnya.
+# ============================================================================
+
+# ---- Dependensi (dipasang lewat "npm install") ----
+node_modules/
+
+# ---- Rahasia & konfigurasi lokal ----
+# .env memuat LLM_API_KEY dan AUTH_SECRET -> jangan pernah di-commit.
+.env
+.env.local
+.env.*.local
+
+# ---- Data runtime (dibuat/diubah saat aplikasi berjalan) ----
+# users.json memuat hash kata sandi, ai-config.json memuat kunci API provider.
+data/uploads/
+data/users.json
+data/ai-config.json
+data/*.tmp
+
+# ---- Log pengujian ----
+# Log baru diabaikan; dua log lama yang sudah tercatat di git tetap terpantau
+# supaya pemindahannya ke folder logs/ tidak menghilangkannya dari riwayat.
+logs/*
+!logs/.smoke-out.log
+!logs/.smoke-err.log
+/*.log
+
+# ---- Berkas sementara editor & sistem operasi ----
+*.tmp
+Thumbs.db
+desktop.ini
+.DS_Store

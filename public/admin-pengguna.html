@@ -140,11 +140,11 @@
       </div>
     </div>
 
-    <!-- ============ PERINGATAN DATA CONTOH ============ -->
+    <!-- ============ PERINGATAN DAFTAR TERPOTONG ============ -->
     <div class="alert alert-warning border d-none align-items-center gap-2 py-2 small" id="alertContoh" role="alert">
       <i class="bi bi-info-circle me-1"></i>
-      Belum ada akun pengguna yang tersimpan pada perangkat ini, sehingga tabel menampilkan
-      <strong>data contoh</strong> untuk keperluan demonstrasi.
+      Jumlah pengguna yang cocok melebihi kapasitas satu permintaan, sehingga tabel hanya memuat
+      <strong>200 pengguna pertama</strong>. Persempit kata kunci pencarian untuk melihat sisanya.
     </div>
 
     <!-- ============ DAFTAR PENGGUNA ============ -->
@@ -183,7 +183,8 @@
             <div>
               <div class="fw-semibold">Data pengguna gagal diambil</div>
               <div class="small mb-2">
-                Sistem tidak dapat mengambil data pengguna. Periksa koneksi ke basis data lalu muat ulang halaman.
+                Sistem tidak dapat mengambil data pengguna dari server.
+                <span id="sebabGagal">Periksa koneksi ke server lalu muat ulang halaman.</span>
               </div>
               <button type="button" class="btn btn-sm btn-danger" id="btnMuatUlang">
                 <i class="bi bi-arrow-clockwise me-1"></i>Muat Ulang
@@ -261,6 +262,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/ippl-api.js"></script>
   <script>
     (function () {
       'use strict';
@@ -279,45 +281,18 @@
        *   1. Tidak ada data pengguna -> tampilkan informasi data belum tersedia.
        *   2. Data gagal diambil      -> tampilkan pesan kesalahan.
        *
-       * Data pada prototipe ini dibaca dari localStorage:
-       *   'akunTerdaftar'      (D1 Data Pengguna)
-       *   'riwayatPemeriksaan' (D3 Hasil Pemeriksaan)
-       *   'permintaanPemeriksaan' (dokumen yang belum selesai diperiksa)
-       * [API] ganti bacaData() dengan GET /api/admin/users
+       * Seluruh data pada halaman ini berasal dari backend nyata:
+       *   GET /api/admin/users      (daftar pengguna + ringkasan aktivitas)
+       *   GET /api/admin/documents  (daftar dokumen untuk modal detail)
+       * Sesi Administrator ditangani berkas bersama js/ippl-api.js
+       * (token Bearer pada sessionStorage, kunci 'sesiAdmin').
        * ================================================================== */
-
-      var KUNCI_SESI_ADMIN  = 'sesiAdmin';
-      var KUNCI_AKUN        = 'akunTerdaftar';
-      var KUNCI_RIWAYAT     = 'riwayatPemeriksaan';
-      var KUNCI_PERMINTAAN  = 'permintaanPemeriksaan';
-
-      // Guard admin. Set false bila ingin halaman bisa dibuka tanpa autentikasi Admin.
-      var WAJIB_LOGIN_ADMIN = true;
 
       /* ---------------- Util ---------------- */
       function esc(s) {
         return String(s == null ? '' : s)
           .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      }
-
-      function bacaJson(storage, kunci, bawaan) {
-        try {
-          var raw = storage.getItem(kunci);
-          return raw ? JSON.parse(raw) : bawaan;
-        } catch (err) {
-          return bawaan;
-        }
-      }
-
-      function storageTersedia(storage) {
-        try {
-          storage.setItem('__uji', '1');
-          storage.removeItem('__uji');
-          return true;
-        } catch (err) {
-          return false;
-        }
       }
 
       function inisial(nama) {
@@ -338,82 +313,81 @@
         }
       }
 
-      /* ---------------- Sesi admin & guard ---------------- */
-      var sesi = bacaJson(sessionStorage, KUNCI_SESI_ADMIN, null);
-
-      if (WAJIB_LOGIN_ADMIN && !sesi && storageTersedia(sessionStorage)) {
-        window.location.replace('login-admin.html?next=admin-pengguna.html');
-        return;
-      }
+      /* ---------------- Sesi admin (guard dari berkas bersama) ---------------- */
+      // IPPL.wajibMasuk mengalihkan ke login-admin.html?next=... bila pengguna
+      // belum masuk atau sesinya bukan Administrator (kunci sesi 'sesiAdmin').
+      var sesi = IPPL.wajibMasuk({ peran: 'Administrator' });
+      if (!sesi) return; // sudah dialihkan ke halaman masuk
 
       var navNama = document.getElementById('navNamaAdmin');
-      navNama.textContent = (sesi && sesi.nama) ? sesi.nama : 'Admin';
-      if (sesi && sesi.email) navNama.title = sesi.email + ' \u00b7 ' + (sesi.peran || 'Administrator');
+      navNama.textContent = sesi.nama ? sesi.nama : 'Admin';
+      if (sesi.email) navNama.title = sesi.email + ' \u00b7 ' + (sesi.peran || 'Administrator');
 
+      // Logout ditangani helper bersama: token & sesi dibersihkan, lalu diarahkan
+      // ke halaman masuk Administrator.
       document.getElementById('navLogout').addEventListener('click', function (e) {
         e.preventDefault();
-        try { sessionStorage.removeItem(KUNCI_SESI_ADMIN); } catch (err) { /* diabaikan */ }
-        window.location.href = 'login-admin.html';
+        IPPL.keluar('login-admin.html');
       });
 
-      /* ---------------- Data contoh (fallback demo) ---------------- */
-      var PENGGUNA_DEMO = [
-        { nama: 'Aditiya Kusuma',  nim: '11241002', email: 'aditiya@example.com',  dibuat: '2026-09-20T09:15:00+08:00', status: 'Aktif' },
-        { nama: 'Rania Pramesti',  nim: '11241015', email: 'rania@example.com',    dibuat: '2026-09-21T10:40:00+08:00', status: 'Aktif' },
-        { nama: 'Bagas Nugraha',   nim: '11241027', email: 'bagas@example.com',    dibuat: '2026-09-22T13:05:00+08:00', status: 'Aktif' }
-      ];
+      /* ---------------- Pengambilan data (GET /api/admin/users) ---------------- */
+      var PENGGUNA_SERVER  = [];
+      var TOTAL_SERVER     = 0;
+      var RINGKASAN_SERVER = null;
+      var galatTerakhir    = null;
 
-      /* ---------------- Pengambilan data ---------------- */
-      // Exception 2: kegagalan pengambilan data disimulasikan lewat mode demo.
-      function bacaData(mode) {
-        if (mode === 'gagal') {
-          return { ok: false, pengguna: [], dokumen: [], pemeriksaan: [], contoh: false };
+      /** Mengubah satu pengguna dari server menjadi objek tampilan. */
+      function dariPengguna(u) {
+        return {
+          id: u.id,
+          nama: u.nama || '\u2014',
+          nim: String(u.nim || ''),
+          email: String(u.email || ''),
+          peran: u.peran || '',
+          status: u.status || '',
+          dibuat: u.dibuat || null,
+          terakhirMasuk: u.terakhir_masuk || null,
+          jumlahDokumen: Number(u.jumlah_dokumen) || 0,
+          jumlahPeriksa: Number(u.jumlah_pemeriksaan) || 0,
+          rataSkor: typeof u.rata_rata_skor === 'number' ? u.rata_rata_skor : null,
+          terakhir: u.terakhir_memeriksa ? new Date(u.terakhir_memeriksa).getTime() : null
+        };
+      }
+
+      /** Memuat daftar pengguna dari server sesuai pencarian & urutan aktif. */
+      function muatPengguna() {
+        var mode = selectMode.value;
+
+        // Alat bantu demo: menampilkan keadaan galat / kosong tanpa memanggil server.
+        if (mode === 'gagal' || mode === 'kosong') {
+          galatTerakhir = null;
+          render();
+          return Promise.resolve();
         }
 
-        var terdaftar = bacaJson(localStorage, KUNCI_AKUN, []);
-        if (!Array.isArray(terdaftar)) terdaftar = [];
+        // Urutan dikerjakan di sisi klien supaya semua pilihan pada daftar
+        // "urutkan" (termasuk Nama Z-A) tetap berfungsi.
+        var query = { limit: 200, offset: 0 };
+        var kata = inputCari.value.trim();
+        if (kata) query.q = kata;
 
-        var adaAkunNyata = terdaftar.length > 0;
+        tampilkanMemuat();
 
-        // Akun: akun bawaan + akun hasil pendaftaran (email unik).
-        var pengguna = adaAkunNyata ? terdaftar.slice() : PENGGUNA_DEMO.slice();
-        pengguna = pengguna.map(function (p) {
-          return {
-            nama: p.nama || '\u2014',
-            nim: String(p.nim || ''),
-            email: String(p.email || '').toLowerCase(),
-            dibuat: p.dibuat || p.membuat || null,
-            status: 'Aktif'
-          };
+        return IPPL.minta('/api/admin/users', { query: query }).then(function (hasil) {
+          galatTerakhir = null;
+
+          PENGGUNA_SERVER  = ((hasil && hasil.data) || []).map(dariPengguna);
+          TOTAL_SERVER     = hasil && typeof hasil.total === 'number' ? hasil.total : PENGGUNA_SERVER.length;
+          RINGKASAN_SERVER = (hasil && hasil.ringkasan) || null;
+
+          render();
+        }).catch(function (err) {
+          galatTerakhir = err || new Error('Permintaan data pengguna gagal diproses.');
+          PENGGUNA_SERVER = [];
+          TOTAL_SERVER = 0;
+          RINGKASAN_SERVER = null;
+          render();
         });
-
-        // Dokumen: diambil dari riwayat pemeriksaan + permintaan yang belum selesai.
-        var riwayat = bacaJson(localStorage, KUNCI_RIWAYAT, []);
-        if (!Array.isArray(riwayat)) riwayat = [];
-        riwayat = riwayat.filter(function (i) {
-          return i && i.dokumen && typeof i.skor === 'number' && isFinite(i.skor);
-        });
-
-        var permintaan = bacaJson(sessionStorage, KUNCI_PERMINTAAN, null);
-        var dokumen = riwayat.map(function (i) {
-          return { nim: String(i.dokumen.nim || ''), judul: i.dokumen.judul, diperiksa: true, arsip: i.arsip };
-        });
-        if (permintaan && permintaan.nim) {
-          dokumen.push({ nim: String(permintaan.nim), judul: permintaan.judul, diperiksa: false, arsip: permintaan.diajukan || null });
-        }
-
-        var contoh = false;
-        if (!adaAkunNyata && !riwayat.length) {
-          contoh = true;
-          dokumen = [
-            { nim: '11241002', judul: 'Sistem Informasi Monitoring Skripsi Berbasis Web', diperiksa: true,  arsip: '2026-10-01T08:20:00+08:00' },
-            { nim: '11241002', judul: 'Laporan Tugas Akhir: Sistem Informasi Monitoring Skripsi', diperiksa: true, arsip: '2026-10-12T14:05:00+08:00' },
-            { nim: '11241015', judul: 'Penerapan Metode SAW pada Sistem Pendukung Keputusan', diperiksa: true, arsip: '2026-10-05T11:30:00+08:00' },
-            { nim: '11241027', judul: 'Aplikasi Monitoring Kinerja Karyawan Berbasis Web', diperiksa: false, arsip: '2026-10-15T09:45:00+08:00' }
-          ];
-        }
-
-        return { ok: true, pengguna: pengguna, dokumen: dokumen, pemeriksaan: riwayat, contoh: contoh };
       }
 
       /* ---------------- Elemen ---------------- */
@@ -435,86 +409,66 @@
         return modalDetail;
       }
 
-      /* ---------------- Render ---------------- */
-      var dataSekarang = { pengguna: [], dokumen: [] };
-
-      function gabungData(mode) {
-        var data = bacaData(mode);
-        dataSekarang = data;
-        if (!data.ok) return data;
-
-        // Lengkapi tiap pengguna dengan jumlah dokumen, jumlah pemeriksaan, waktu terakhir.
-        data.pengguna = data.pengguna.map(function (p) {
-          var dok = data.dokumen.filter(function (d) { return d.nim === p.nim; });
-          var periksa = data.pemeriksaan.filter(function (i) { return String(i.dokumen.nim || '') === p.nim; });
-
-          var terakhir = null;
-          periksa.forEach(function (i) {
-            var t = new Date(i.arsip || 0).getTime();
-            if (!isNaN(t) && (terakhir === null || t > terakhir)) terakhir = t;
-          });
-          dok.forEach(function (d) {
-            var t = new Date(d.arsip || 0).getTime();
-            if (!isNaN(t) && (terakhir === null || t > terakhir)) terakhir = t;
-          });
-
-          var jumlah = periksa.reduce(function (a, i) { return a + i.skor; }, 0);
-          return {
-            nama: p.nama,
-            nim: p.nim,
-            email: p.email,
-            status: p.status,
-            dibuat: p.dibuat,
-            jumlahDokumen: dok.length,
-            jumlahPeriksa: periksa.length,
-            rataSkor: periksa.length ? Math.round(jumlah / periksa.length) : null,
-            terakhir: terakhir
-          };
-        });
-
-        return data;
-      }
-
-      function render() {
-        var mode = selectMode.value;
-        var data = gabungData(mode);
-
+      /* ---------------- Keadaan antarmuka ---------------- */
+      function sembunyikanSemua() {
         alertGagal.classList.add('d-none');
         wrapTabel.classList.add('d-none');
         stateKosong.classList.add('d-none');
         statePencarian.classList.add('d-none');
         alertContoh.classList.add('d-none');
         alertContoh.classList.remove('d-flex');
+      }
 
-        // Exception 2: gagal mengambil data.
-        if (!data.ok) {
-          alertGagal.classList.remove('d-none');
+      function tampilkanMemuat() {
+        sembunyikanSemua();
+        alertContoh.classList.remove('d-none');
+        alertContoh.classList.add('d-flex');
+        alertContoh.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>'
+          + 'Memuat data pengguna dari server\u2026';
+        infoJumlah.textContent = 'Memuat data pengguna\u2026';
+        infoSumber.textContent = 'server';
+      }
+
+      /** Menampilkan pesan galat beserta sebabnya (Exception 2). */
+      function tampilkanGalat(err) {
+        var sebab = document.getElementById('sebabGagal');
+        if (sebab) sebab.textContent = IPPL.pesanGalat(err);
+        alertGagal.classList.remove('d-none');
+      }
+
+      /* ---------------- Render ---------------- */
+      function render() {
+        var mode = selectMode.value;
+
+        sembunyikanSemua();
+
+        // Exception 2: gagal mengambil data (mode demo atau permintaan gagal).
+        if (mode === 'gagal' || galatTerakhir) {
+          tampilkanGalat(galatTerakhir || new Error('Alat bantu demo: kegagalan pengambilan data.'));
           infoJumlah.textContent = 'Data pengguna tidak dapat ditampilkan.';
           infoSumber.textContent = 'gagal dimuat';
-          hitungStatistik([], []);
+          hitungStatistik([], 0);
           return;
         }
 
-        if (data.contoh) {
-          alertContoh.classList.remove('d-none');
-          alertContoh.classList.add('d-flex');
-        }
+        var semua = mode === 'kosong' ? [] : PENGGUNA_SERVER;
 
-        // Exception 1 / mode demo: tidak ada data pengguna.
-        if (mode === 'kosong' || !data.pengguna.length) {
+        // Exception 1: tidak ada data pengguna.
+        if (!semua.length) {
           stateKosong.classList.remove('d-none');
           infoJumlah.textContent = 'Data pengguna belum tersedia.';
-          infoSumber.textContent = data.contoh ? 'data contoh' : 'penyimpanan lokal';
-          hitungStatistik([], []);
+          infoSumber.textContent = 'server';
+          hitungStatistik([], 0);
           return;
         }
 
-        hitungStatistik(data.pengguna, data.dokumen);
+        hitungStatistik(semua, TOTAL_SERVER);
 
         var cari = inputCari.value.trim().toLowerCase();
-        var daftar = data.pengguna.filter(function (p) {
+        var daftar = semua.filter(function (p) {
           if (!cari) return true;
-          return (p.nama + ' ' + p.nim + ' ' + p.email).toLowerCase().indexOf(cari) !== -1;
+          return (p.nama + ' ' + p.nim + ' ' + p.email + ' ' + p.peran)
+            .toLowerCase().indexOf(cari) !== -1;
         });
 
         var modeUrut = selectUrut.value;
@@ -531,7 +485,7 @@
         if (!daftar.length) {
           statePencarian.classList.remove('d-none');
           infoJumlah.textContent = 'Tidak ada pengguna yang cocok dengan pencarian.';
-          infoSumber.textContent = data.contoh ? 'data contoh' : 'penyimpanan lokal';
+          infoSumber.textContent = 'server \u00b7 /api/admin/users';
           return;
         }
 
@@ -542,7 +496,8 @@
                 '<span class="avatar">' + esc(inisial(p.nama)) + '</span>' +
                 '<div class="min-w-0">' +
                   '<div class="row-judul text-truncate">' + esc(p.nama) + '</div>' +
-                  '<div class="row-meta">Terdaftar ' + esc(p.dibuat ? tanggalRingkas(p.dibuat).split(',')[0] : '\u2014') + '</div>' +
+                  '<div class="row-meta">Terdaftar ' + esc(p.dibuat ? tanggalRingkas(p.dibuat).split(',')[0] : '\u2014')
+                    + ' \u00b7 ' + esc(p.peran || '\u2014') + '</div>' +
                 '</div>' +
               '</div>' +
             '</td>' +
@@ -553,49 +508,102 @@
             '<td>' + (p.terakhir ? '<span class="row-meta">' + esc(tanggalRingkas(new Date(p.terakhir).toISOString())) + '</span>'
                                   : '<span class="text-secondary">Belum diperiksa</span>') + '</td>' +
             '<td class="text-end pe-3 no-print">' +
-              '<button type="button" class="btn btn-sm btn-outline-primary" data-detail="' + esc(p.email) + '">' +
+              '<button type="button" class="btn btn-sm btn-outline-primary" data-detail="' + esc(p.id) + '">' +
                 '<i class="bi bi-eye me-1"></i>Detail' +
               '</button>' +
             '</td>' +
           '</tr>';
         }).join('');
 
-        infoJumlah.textContent = 'Menampilkan ' + daftar.length + ' dari ' + data.pengguna.length + ' pengguna.';
-        infoSumber.textContent = data.contoh ? 'data contoh' : 'penyimpanan lokal';
+        infoJumlah.textContent = 'Menampilkan ' + daftar.length + ' dari ' + TOTAL_SERVER + ' pengguna.';
+        infoSumber.textContent = 'server \u00b7 /api/admin/users';
+
+        // Beri tahu bila jumlah pengguna melebihi kapasitas satu permintaan.
+        var dipotong = TOTAL_SERVER > semua.length;
+        alertContoh.classList.toggle('d-none', !dipotong);
+        alertContoh.classList.toggle('d-flex', dipotong);
+        if (dipotong) {
+          alertContoh.innerHTML = '<i class="bi bi-info-circle me-1"></i>Menampilkan '
+            + esc(String(semua.length)) + ' pengguna pertama dari ' + esc(String(TOTAL_SERVER))
+            + ' pengguna yang cocok. Persempit kata kunci pencarian untuk melihat sisanya.';
+        }
       }
 
-      function hitungStatistik(pengguna, dokumen) {
-        document.getElementById('statPengguna').textContent = String(pengguna.length);
-        document.getElementById('statDokumen').textContent = String(dokumen.length);
+      /**
+       * Mengisi kartu ringkasan. Angka berasal dari data yang dimuat pada
+       * halaman ini (maksimal 200 pengguna per permintaan).
+       */
+      function hitungStatistik(pengguna, totalServer) {
+        var adaData = pengguna.length > 0;
 
-        var riwayat = (dataSekarang.pemeriksaan || []);
-        document.getElementById('statPemeriksaan').textContent = String(riwayat.length);
+        var dokumen = 0, pemeriksaan = 0, bobotSkor = 0, bobotPeriksa = 0;
+        pengguna.forEach(function (p) {
+          dokumen += p.jumlahDokumen;
+          pemeriksaan += p.jumlahPeriksa;
+          if (p.rataSkor !== null && p.jumlahPeriksa > 0) {
+            bobotSkor += p.rataSkor * p.jumlahPeriksa;
+            bobotPeriksa += p.jumlahPeriksa;
+          }
+        });
 
-        var jumlah = riwayat.reduce(function (a, i) { return a + i.skor; }, 0);
-        document.getElementById('statRata').textContent = riwayat.length ? (Math.round(jumlah / riwayat.length) + '%') : '\u2014';
+        var totalPengguna = RINGKASAN_SERVER
+          ? (Number(RINGKASAN_SERVER.mahasiswa) || 0) + (Number(RINGKASAN_SERVER.administrator) || 0)
+          : totalServer;
+
+        document.getElementById('statPengguna').textContent = String(totalPengguna || 0);
+        document.getElementById('statDokumen').textContent = adaData ? String(dokumen) : '0';
+        document.getElementById('statPemeriksaan').textContent = adaData ? String(pemeriksaan) : '0';
+        document.getElementById('statRata').textContent = bobotPeriksa
+          ? (Math.round(bobotSkor / bobotPeriksa) + '%')
+          : '\u2014';
       }
 
       /* ---------------- Detail pengguna (langkah 4-5) ---------------- */
-      function bukaDetail(email) {
-        var p = dataSekarang.pengguna.filter(function (x) { return x.email === email; })[0];
+      var penggunaDetail = null;
+
+      /** Memuat dokumen milik satu pengguna (GET /api/admin/documents?nim=). */
+      function muatDokumenPengguna(nim) {
+        if (!nim) return Promise.resolve([]);
+        return IPPL.minta('/api/admin/documents', { query: { nim: nim, limit: 100, offset: 0 } })
+          .then(function (hasil) {
+            return ((hasil && hasil.data) || []).map(function (d) {
+              return {
+                judul: d.judul || 'Tanpa judul',
+                arsip: d.diunggah_pada || null,
+                diperiksa: d.diperiksa === true
+              };
+            });
+          });
+      }
+
+      function barisDetail(kunci, nilai) {
+        return '<div class="detail-row"><span class="k">' + esc(kunci)
+          + '</span><span class="v">' + nilai + '</span></div>';
+      }
+
+      function daftarDokumenHtml(dok) {
+        if (!dok || !dok.length) {
+          return '<li class="text-secondary small py-2">Pengguna ini belum mengunggah dokumen.</li>';
+        }
+        return dok.map(function (d) {
+          return '<li class="d-flex justify-content-between align-items-start gap-3 py-2 border-bottom">' +
+                   '<span class="min-w-0">' +
+                     '<span class="d-block row-judul text-truncate">' + esc(d.judul) + '</span>' +
+                     '<span class="row-meta">' + esc(d.arsip ? tanggalRingkas(d.arsip) : '\u2014') + '</span>' +
+                   '</span>' +
+                   '<span class="badge ' + (d.diperiksa
+                     ? 'bg-success-subtle text-success-emphasis border border-success'
+                     : 'bg-secondary-subtle text-secondary-emphasis border') + '">' +
+                     (d.diperiksa ? 'Sudah diperiksa' : 'Belum diperiksa') +
+                   '</span>' +
+                 '</li>';
+        }).join('');
+      }
+
+      function bukaDetail(id) {
+        var p = PENGGUNA_SERVER.filter(function (x) { return String(x.id) === String(id); })[0];
         if (!p) return;
-
-        var dok = (dataSekarang.dokumen || []).filter(function (d) { return d.nim === p.nim; });
-        var periksa = (dataSekarang.pemeriksaan || []).filter(function (i) { return String(i.dokumen.nim || '') === p.nim; });
-
-        var barisDokumen = dok.length
-          ? dok.map(function (d) {
-              return '<li class="d-flex justify-content-between align-items-start gap-3 py-2 border-bottom">' +
-                       '<span class="min-w-0">' +
-                         '<span class="d-block row-judul text-truncate">' + esc(d.judul) + '</span>' +
-                         '<span class="row-meta">' + esc(d.arsip ? tanggalRingkas(d.arsip) : '\u2014') + '</span>' +
-                       '</span>' +
-                       '<span class="badge ' + (d.diperiksa ? 'bg-success-subtle text-success-emphasis border border-success' : 'bg-secondary-subtle text-secondary-emphasis border') + '">' +
-                         (d.diperiksa ? 'Sudah diperiksa' : 'Belum diperiksa') +
-                       '</span>' +
-                     '</li>';
-            }).join('')
-          : '<li class="text-secondary small py-2">Pengguna ini belum mengunggah dokumen.</li>';
+        penggunaDetail = p;
 
         var badgeTingkat = '';
         if (p.rataSkor !== null) {
@@ -615,24 +623,43 @@
           '</div>' +
 
           '<div class="mb-4">' +
-            '<div class="detail-row"><span class="k">Nama Lengkap</span><span class="v">' + esc(p.nama) + '</span></div>' +
-            '<div class="detail-row"><span class="k">NIM</span><span class="v">' + (p.nim ? esc(p.nim) : '\u2014') + '</span></div>' +
-            '<div class="detail-row"><span class="k">Email</span><span class="v">' + esc(p.email || '\u2014') + '</span></div>' +
-            '<div class="detail-row"><span class="k">Status Akun</span><span class="v">' +
-              '<span class="badge bg-success-subtle text-success-emphasis border border-success">' + esc(p.status) + '</span></span></div>' +
-            '<div class="detail-row"><span class="k">Terdaftar Sejak</span><span class="v">' +
-              esc(p.dibuat ? tanggalRingkas(p.dibuat) : '\u2014') + '</span></div>' +
-            '<div class="detail-row"><span class="k">Jumlah Dokumen</span><span class="v">' + p.jumlahDokumen + ' dokumen</span></div>' +
-            '<div class="detail-row"><span class="k">Jumlah Pemeriksaan</span><span class="v">' + p.jumlahPeriksa + ' kali</span></div>' +
-            '<div class="detail-row"><span class="k">Ringkasan Hasil</span><span class="v">' +
-              (badgeTingkat || '<span class="text-secondary">Belum ada pemeriksaan</span>') + '</span></div>' +
+            barisDetail('Nama Lengkap', esc(p.nama)) +
+            barisDetail('NIM', p.nim ? esc(p.nim) : '\u2014') +
+            barisDetail('Email', esc(p.email || '\u2014')) +
+            barisDetail('Peran', esc(p.peran || '\u2014')) +
+            barisDetail('Status Akun', '<span class="badge bg-success-subtle text-success-emphasis border border-success">'
+              + esc(p.status || 'Aktif') + '</span>') +
+            barisDetail('Terdaftar Sejak', esc(p.dibuat ? tanggalRingkas(p.dibuat) : '\u2014')) +
+            barisDetail('Terakhir Masuk', esc(p.terakhirMasuk ? tanggalRingkas(p.terakhirMasuk) : '\u2014')) +
+            barisDetail('Jumlah Dokumen', p.jumlahDokumen + ' dokumen') +
+            barisDetail('Jumlah Pemeriksaan', p.jumlahPeriksa + ' kali') +
+            barisDetail('Ringkasan Hasil', badgeTingkat || '<span class="text-secondary">Belum ada pemeriksaan</span>') +
           '</div>' +
 
           '<h3 class="h6 fw-bold mb-2"><i class="bi bi-folder2-open text-primary me-2"></i>Dokumen Pengguna</h3>' +
-          '<ul class="list-unstyled mb-0">' + barisDokumen + '</ul>';
+          '<ul class="list-unstyled mb-0" id="daftarDokumenModal">' +
+            (p.nim
+              ? '<li class="text-secondary small py-2"><span class="spinner-border spinner-border-sm me-2"></span>Memuat dokumen\u2026</li>'
+              : '<li class="text-secondary small py-2">Akun ini tidak memiliki NIM sehingga dokumennya tidak dapat dicari.</li>') +
+          '</ul>';
 
-        document.getElementById('btnKeDokumen').setAttribute('href', 'admin-dokumen.html?nim=' + encodeURIComponent(p.nim));
+        document.getElementById('btnKeDokumen').setAttribute('href',
+          'admin-dokumen.html?nim=' + encodeURIComponent(p.nim || ''));
         modal().show();
+
+        if (!p.nim) return;
+
+        // Daftar dokumen diisi menyusul agar modal langsung tampil.
+        muatDokumenPengguna(p.nim).then(function (dok) {
+          var wadah = document.getElementById('daftarDokumenModal');
+          if (wadah) wadah.innerHTML = daftarDokumenHtml(dok);
+        }).catch(function (err) {
+          var wadah = document.getElementById('daftarDokumenModal');
+          if (wadah) {
+            wadah.innerHTML = '<li class="text-danger small py-2"><i class="bi bi-exclamation-triangle me-1"></i>'
+              + esc(IPPL.pesanGalat(err)) + '</li>';
+          }
+        });
       }
 
       /* ---------------- Event ---------------- */
@@ -641,15 +668,23 @@
         if (tombol) bukaDetail(tombol.getAttribute('data-detail'));
       });
 
-      inputCari.addEventListener('input', render);
-      selectUrut.addEventListener('change', render);
-      selectMode.addEventListener('change', render);
-      document.getElementById('btnMuatUlang').addEventListener('click', function () {
-        selectMode.value = 'normal';
-        render();
+      // Pencarian dikerjakan server; diberi jeda singkat agar tidak memanggil
+      // server pada setiap ketikan.
+      var jamCari = null;
+      inputCari.addEventListener('input', function () {
+        window.clearTimeout(jamCari);
+        jamCari = window.setTimeout(muatPengguna, 350);
       });
 
-      render();
+      selectUrut.addEventListener('change', render);
+      selectMode.addEventListener('change', muatPengguna);
+      document.getElementById('btnMuatUlang').addEventListener('click', function () {
+        selectMode.value = 'normal';
+        muatPengguna();
+      });
+
+      /* ---------------- Langkah 1-2: pemuatan awal ---------------- */
+      muatPengguna();
     })();
   </script>
 </body>

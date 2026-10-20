@@ -147,11 +147,11 @@
       </div>
     </div>
 
-    <!-- ============ PERINGATAN DATA CONTOH ============ -->
+    <!-- ============ PERINGATAN DAFTAR DIPOTONG (batas satu permintaan) ============ -->
     <div class="alert alert-warning border d-none align-items-center gap-2 py-2 small" id="alertContoh" role="alert">
       <i class="bi bi-info-circle me-1"></i>
-      Belum ada dokumen yang tersimpan pada perangkat ini, sehingga tabel menampilkan
-      <strong>data contoh</strong> untuk keperluan demonstrasi.
+      Menampilkan sebagian dokumen saja karena jumlahnya melebihi batas satu permintaan.
+      Persempit pencarian atau filter agar seluruh dokumen terlihat.
     </div>
 
     <!-- ============ DAFTAR DOKUMEN ============ -->
@@ -194,7 +194,7 @@
             <div>
               <div class="fw-semibold">Data dokumen gagal diambil</div>
               <div class="small mb-2">
-                Sistem tidak dapat mengambil data dokumen. Periksa koneksi ke penyimpanan dokumen
+                Sistem tidak dapat mengambil data dokumen. Periksa koneksi ke server
                 lalu muat ulang halaman.
               </div>
               <button type="button" class="btn btn-sm btn-danger" id="btnMuatUlang">
@@ -274,6 +274,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/ippl-api.js"></script>
   <script>
     (function () {
       'use strict';
@@ -283,7 +284,7 @@
        *
        * Flow of Activities:
        *   1. Admin memilih menu Dokumen.
-       *   2. Sistem mengambil data dokumen.
+       *   2. Sistem mengambil daftar dokumen dari server.
        *   3. Sistem menampilkan daftar dokumen.
        *   4. Admin memilih dokumen.
        *   5. Sistem menampilkan informasi dokumen yang dipilih.
@@ -291,44 +292,27 @@
        * Exception:
        *   1. Tidak ada dokumen -> tampilkan informasi dokumen belum tersedia.
        *   2. Dokumen gagal diambil -> tampilkan pesan kesalahan.
+       *   3. Detail dokumen tidak ditemukan (HTTP 404) -> beri tahu bahwa
+       *      data kemungkinan sudah dihapus.
        *
-       * Data prototipe dibaca dari:
-       *   'riwayatPemeriksaan'    -> dokumen yang sudah diperiksa (D2 + D3)
-       *   'permintaanPemeriksaan' -> dokumen yang belum selesai diperiksa
-       * [API] ganti bacaData() dengan GET /api/admin/documents
+       * Sumber data: backend Express pada server.js
+       *   GET /api/admin/documents?q=&nim=&jenis_dokumen=&limit=200&offset=0
+       *       -> daftar dokumen seluruh pengguna
+       *   GET /api/results/:id
+       *       -> rekaman lengkap satu dokumen untuk modal detail
+       * Tidak ada lagi data contoh maupun pembacaan localStorage/sessionStorage
+       * untuk data dokumen; sesi Administrator ditangani IPPL 'sesiAdmin'.
        * ================================================================== */
 
-      var KUNCI_SESI_ADMIN = 'sesiAdmin';
-      var KUNCI_RIWAYAT    = 'riwayatPemeriksaan';
-      var KUNCI_PERMINTAAN = 'permintaanPemeriksaan';
-
-      // Guard admin. Set false bila ingin halaman bisa dibuka tanpa autentikasi Admin.
-      var WAJIB_LOGIN_ADMIN = true;
+      /* ---------------- Sesi admin & guard (IPPL.wajibMasuk) ---------------- */
+      var sesi = IPPL.wajibMasuk({ peran: 'Administrator' });
+      if (!sesi) return;
 
       /* ---------------- Util ---------------- */
       function esc(s) {
         return String(s == null ? '' : s)
           .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      }
-
-      function bacaJson(storage, kunci, bawaan) {
-        try {
-          var raw = storage.getItem(kunci);
-          return raw ? JSON.parse(raw) : bawaan;
-        } catch (err) {
-          return bawaan;
-        }
-      }
-
-      function storageTersedia(storage) {
-        try {
-          storage.setItem('__uji', '1');
-          storage.removeItem('__uji');
-          return true;
-        } catch (err) {
-          return false;
-        }
       }
 
       function tanggalRingkas(iso) {
@@ -356,22 +340,14 @@
         return { label: 'Indikasi Rendah', cls: 'bg-success-subtle text-success-emphasis border border-success' };
       }
 
-      /* ---------------- Sesi admin & guard ---------------- */
-      var sesi = bacaJson(sessionStorage, KUNCI_SESI_ADMIN, null);
-
-      if (WAJIB_LOGIN_ADMIN && !sesi && storageTersedia(sessionStorage)) {
-        window.location.replace('login-admin.html?next=admin-dokumen.html');
-        return;
-      }
-
+      /* ---------------- Nama admin & logout ---------------- */
       var navNama = document.getElementById('navNamaAdmin');
       navNama.textContent = (sesi && sesi.nama) ? sesi.nama : 'Admin';
       if (sesi && sesi.email) navNama.title = sesi.email + ' \u00b7 ' + (sesi.peran || 'Administrator');
 
       document.getElementById('navLogout').addEventListener('click', function (e) {
         e.preventDefault();
-        try { sessionStorage.removeItem(KUNCI_SESI_ADMIN); } catch (err) { /* diabaikan */ }
-        window.location.href = 'login-admin.html';
+        IPPL.keluar('login-admin.html');
       });
 
       // ====== Filter NIM dari tautan (?nim=11241002) ======
@@ -393,88 +369,104 @@
         }
       }
 
-      /* ---------------- Data contoh (fallback demo) ---------------- */
-      var DOKUMEN_CONTOH = [
-        {
-          judul: 'Sistem Informasi Monitoring Skripsi Berbasis Web',
-          nim: '11241002', jenis: 'Proposal Tugas Akhir', berkas: 'proposal-aditiya-kusuma.pdf',
-          ukuran: '2,4 MB', halaman: 38, kata: 8740, waktu: '2026-10-01T08:20:00+08:00', skor: 34
-        },
-        {
-          judul: 'Laporan Tugas Akhir: Sistem Informasi Monitoring Skripsi Berbasis Web',
-          nim: '11241002', jenis: 'Laporan Tugas Akhir', berkas: 'laporan-aditiya-kusuma.docx',
-          ukuran: '5,1 MB', halaman: 86, kata: 19780, waktu: '2026-10-12T14:05:00+08:00', skor: 58
-        },
-        {
-          judul: 'Penerapan Metode Simple Additive Weighting pada Sistem Pendukung Keputusan',
-          nim: '11241015', jenis: 'Proposal Tugas Akhir', berkas: 'proposal-rania.docx',
-          ukuran: '1,8 MB', halaman: 29, kata: 6670, waktu: '2026-10-05T11:30:00+08:00', skor: 12
-        },
-        {
-          judul: 'Aplikasi Monitoring Kinerja Karyawan Berbasis Web',
-          nim: '11241027', jenis: 'Proposal Tugas Akhir', berkas: 'proposal-bagas.pdf',
-          ukuran: '2,1 MB', halaman: 34, kata: 7820, waktu: '2026-10-15T09:45:00+08:00', skor: null
-        }
-      ];
+      /* ---------------- Sumber data: REST API backend ---------------- */
 
-      /* ---------------- Pengambilan data ---------------- */
-      function bacaData(mode) {
-        if (mode === 'gagal') return { ok: false, dokumen: [], riwayat: [], contoh: false };
+      // Cache hasil GET /api/admin/documents dalam bentuk yang dibaca render().
+      var DOKUMEN_SERVER = [];
+      var TOTAL_SERVER   = 0;      // field total pada balasan server
+      var TERBACA_SERVER = '';     // field jumlah_terbaca_total (mis. "2,4 MB")
+      var galatTerakhir  = null;   // Error pemuatan terakhir (null = berhasil)
 
-        var riwayat = bacaJson(localStorage, KUNCI_RIWAYAT, []);
-        if (!Array.isArray(riwayat)) riwayat = [];
-        riwayat = riwayat.filter(function (i) {
-          return i && i.dokumen && typeof i.skor === 'number' && isFinite(i.skor);
-        });
+      /** Memetakan satu item GET /api/admin/documents ke bentuk yang dibaca render(). */
+      function dariItemServer(item) {
+        var berkas = (item && item.berkas) || {};
+        var ukuran = berkas.ukuran
+          || (typeof berkas.ukuran_byte === 'number' ? IPPL.formatBytes(berkas.ukuran_byte) : '');
 
-        var dokumen = riwayat.map(function (i) {
+        return {
+          id: item && item.id ? String(item.id) : '',
+          judul: (item && item.judul) || '(tanpa judul)',
+          nim: String((item && item.nim) || ''),
+          jenis: (item && item.jenis_dokumen) || '\u2014',
+          berkas: berkas.nama_asli || '\u2014',
+          ukuran: ukuran || '\u2014',
+          // Jumlah halaman & kata hanya ada pada rekaman detail (GET /api/results/:id).
+          halaman: 0,
+          kata: 0,
+          waktu: (item && item.diunggah_pada) || null,
+          skor: item && typeof item.skor === 'number' ? item.skor : null,
+          temuans: (item && item.jumlah_temuan) || 0,
+          struktur: null,
+          rincian: []
+        };
+      }
+
+      /** Ringkasan structure_analysis -> {status, terdeteksi, total} untuk modal. */
+      function ringkasStruktur(struktur) {
+        var kunci = Object.keys(struktur || {});
+        if (!kunci.length) return null;
+
+        var terdeteksi = 0;
+        kunci.forEach(function (k) { if (struktur[k] === true) terdeteksi += 1; });
+
+        return {
+          status: terdeteksi === kunci.length ? 'Lengkap'
+            : (terdeteksi ? 'Sebagian' : 'Tidak terdeteksi'),
+          terdeteksi: terdeteksi,
+          total: kunci.length
+        };
+      }
+
+      /** flagged_passages -> daftar {label, nilai} untuk "Rincian Sumber Kemiripan". */
+      function rincianTemuan(temuan) {
+        return (temuan || []).map(function (t) {
+          var sumber  = String((t && t.source_reference) || '').trim() || 'Sumber tidak disebutkan';
+          var kutipan = String((t && t.text) || '').replace(/\s+/g, ' ').trim();
+          if (kutipan.length > 60) kutipan = kutipan.slice(0, 60) + '\u2026';
+
           return {
-            id: i.id,
-            judul: i.dokumen.judul,
-            nim: String(i.dokumen.nim || ''),
-            jenis: i.dokumen.jenis || 'Proposal Tugas Akhir',
-            berkas: i.dokumen.berkas || '\u2014',
-            ukuran: i.dokumen.ukuran || '\u2014',
-            halaman: i.dokumen.halaman || 0,
-            kata: i.dokumen.kata || 0,
-            waktu: i.arsip || null,
-            waktuPeriksa: i.dokumen.diperiksa || null,
-            skor: i.skor,
-            struktur: i.struktur || null,
-            rincian: i.rincian || [],
-            temuans: (i.temuan || []).length,
-            hasil: i
+            label: kutipan ? sumber + ' \u00b7 \u201c' + kutipan + '\u201d' : sumber,
+            nilai: Math.round(Number((t && t.similarity_percentage) || 0))
           };
         });
+      }
 
-        var permintaan = bacaJson(sessionStorage, KUNCI_PERMINTAAN, null);
-        if (permintaan && permintaan.judul) {
-          dokumen.unshift({
-            id: null,
-            judul: permintaan.judul,
-            nim: String(permintaan.nim || ''),
-            jenis: permintaan.jenis || 'Proposal Tugas Akhir',
-            berkas: permintaan.berkas || '\u2014',
-            ukuran: permintaan.ukuran || '\u2014',
-            halaman: 0,
-            kata: 0,
-            waktu: permintaan.diajukan || null,
-            waktuPeriksa: null,
-            skor: null,
-            struktur: null,
-            rincian: [],
-            temuans: 0,
-            hasil: null
-          });
-        }
+      /** Memetakan rekaman GET /api/results/:id ke bentuk yang dibaca modal detail. */
+      function dariRekamanLengkap(ringkas, rekaman) {
+        var meta   = (rekaman && rekaman.document_metadata) || {};
+        var berkas = (rekaman && rekaman.berkas) || {};
+        var teks   = (rekaman && rekaman.teks_dokumen) || {};
+        var temuan = (rekaman && rekaman.flagged_passages) || [];
+        var ukuran = berkas.ukuran
+          || (typeof berkas.ukuran_byte === 'number' ? IPPL.formatBytes(berkas.ukuran_byte) : '');
 
-        var contoh = false;
-        if (!dokumen.length) {
-          contoh = true;
-          dokumen = DOKUMEN_CONTOH.slice();
-        }
+        return {
+          id: rekaman && rekaman.id ? String(rekaman.id) : ringkas.id,
+          judul: meta.judul || ringkas.judul,
+          nim: String(meta.nim || ringkas.nim || ''),
+          jenis: meta.jenis_dokumen || ringkas.jenis,
+          berkas: berkas.nama_asli || ringkas.berkas,
+          ukuran: ukuran || ringkas.ukuran,
+          halaman: Number(teks.jumlah_halaman) || 0,
+          kata: Number(teks.jumlah_kata) || 0,
+          waktu: (rekaman && rekaman.created_at) || ringkas.waktu,
+          skor: rekaman && typeof rekaman.overall_similarity_score === 'number'
+            ? rekaman.overall_similarity_score : ringkas.skor,
+          temuans: temuan.length,
+          struktur: ringkasStruktur((rekaman && rekaman.structure_analysis) || null),
+          rincian: rincianTemuan(temuan)
+        };
+      }
 
-        return { ok: true, dokumen: dokumen, riwayat: riwayat, contoh: contoh };
+      /**
+       * Membaca data yang sudah dimuat dari server. Tetap sinkron agar render()
+       * tidak perlu diubah; pemuatan sesungguhnya dikerjakan muatDokumen().
+       */
+      function bacaData(mode) {
+        if (mode === 'gagal') return { ok: false, dokumen: [] };
+        if (mode === 'kosong') return { ok: true, dokumen: [] };
+        if (galatTerakhir) return { ok: false, dokumen: [] };
+        return { ok: true, dokumen: DOKUMEN_SERVER };
       }
 
       /* ---------------- Elemen ---------------- */
@@ -501,6 +493,120 @@
 
       function jenisKode(jenis) {
         return String(jenis || '').toLowerCase().indexOf('laporan') !== -1 ? 'laporan' : 'proposal';
+      }
+
+      /* ---------------- Keadaan antarmuka: memuat, galat, ringkasan ---------------- */
+
+      // Teks asli blok peringatan kegagalan, dipulihkan setelah pemuatan berhasil.
+      var pesanGagalBawaan = null;
+
+      /** Menampilkan indikator memuat pada tabel. */
+      function tampilkanMemuat() {
+        alertGagal.classList.add('d-none');
+        alertContoh.classList.add('d-none');
+        alertContoh.classList.remove('d-flex');
+        stateKosong.classList.add('d-none');
+        statePencarian.classList.add('d-none');
+        wrapTabel.classList.remove('d-none');
+        isiTabel.innerHTML = '<tr><td colspan="8" class="text-center text-secondary py-4">'
+          + '<span class="spinner-border spinner-border-sm me-2"></span>'
+          + 'Memuat dokumen dari server\u2026</td></tr>';
+        infoJumlah.textContent = 'Memuat dokumen\u2026';
+        infoSumber.textContent = 'memuat\u2026';
+      }
+
+      /** Menuliskan pesan galat server yang ramah pada blok peringatan. */
+      function tampilkanPesanGagal(err) {
+        var kotak = alertGagal.querySelector('.small');
+        if (!kotak) return;
+        if (pesanGagalBawaan === null) pesanGagalBawaan = kotak.innerHTML;
+
+        kotak.innerHTML = IPPL.esc(IPPL.pesanGalat(err))
+          + (err && err.status === 401
+            ? ' <a href="login-admin.html?next=admin-dokumen.html">Masuk kembali</a>.'
+            : ' Periksa koneksi ke server lalu muat ulang halaman.');
+      }
+
+      /** Mengembalikan teks asli blok peringatan kegagalan. */
+      function pulihkanPesanGagal() {
+        var kotak = alertGagal.querySelector('.small');
+        if (kotak && pesanGagalBawaan !== null) kotak.innerHTML = pesanGagalBawaan;
+      }
+
+      /**
+       * Menyesuaikan kartu ringkasan & keterangan sumber data dengan angka dari
+       * server (total dan jumlah_terbaca_total). Dipanggil setelah render()
+       * sehingga isi render() sendiri tidak perlu diubah.
+       */
+      function terapkanRingkasanServer() {
+        var mode = selectMode.value;
+
+        // render() sudah menulis keadaan gagal; jangan ditimpa.
+        if (mode === 'gagal' || galatTerakhir) return;
+
+        if (mode === 'kosong') {
+          infoSumber.textContent = 'server';
+          return;
+        }
+
+        document.getElementById('statDokumen').textContent = String(TOTAL_SERVER);
+        infoSumber.textContent = TERBACA_SERVER ? 'server \u00b7 ' + TERBACA_SERVER : 'server';
+
+        // Bila jumlah dokumen melebihi batas satu permintaan, beri tahu admin.
+        var dipotong = TOTAL_SERVER > DOKUMEN_SERVER.length;
+        alertContoh.classList.toggle('d-none', !dipotong);
+        alertContoh.classList.toggle('d-flex', dipotong);
+        if (dipotong) {
+          alertContoh.innerHTML = '<i class="bi bi-info-circle me-1"></i>Menampilkan '
+            + IPPL.esc(String(DOKUMEN_SERVER.length)) + ' dokumen pertama dari '
+            + IPPL.esc(String(TOTAL_SERVER)) + ' dokumen yang cocok. Persempit pencarian '
+            + 'atau filter agar seluruh dokumen terlihat.';
+        }
+      }
+
+      /* ---------------- Pengambilan data (GET /api/admin/documents) ---------------- */
+
+      /** Memuat daftar dokumen sesuai kata kunci & filter yang aktif. */
+      function muatDokumen() {
+        var mode = selectMode.value;
+
+        // Alat bantu demo: mensimulasikan kondisi tanpa memanggil server.
+        if (mode === 'gagal' || mode === 'kosong') {
+          galatTerakhir = null;
+          render();
+          terapkanRingkasanServer();
+          return Promise.resolve();
+        }
+
+        // Hanya nilai yang terisi yang dikirim sebagai query.
+        var query = { limit: 200, offset: 0 };
+        var kata = inputCari.value.trim();
+        if (kata) query.q = kata;
+        if (nimTautan) query.nim = nimTautan;
+        if (filterJenis.value) query.jenis_dokumen = filterJenis.value;
+
+        tampilkanMemuat();
+
+        return IPPL.minta('/api/admin/documents', { query: query }).then(function (hasil) {
+          galatTerakhir = null;
+          pulihkanPesanGagal();
+
+          DOKUMEN_SERVER = ((hasil && hasil.data) || []).map(dariItemServer);
+          TOTAL_SERVER = hasil && typeof hasil.total === 'number'
+            ? hasil.total : DOKUMEN_SERVER.length;
+          TERBACA_SERVER = (hasil && hasil.jumlah_terbaca_total) || '';
+
+          render();
+          terapkanRingkasanServer();
+        }).catch(function (err) {
+          galatTerakhir = err || new Error('Permintaan data dokumen gagal diproses.');
+          DOKUMEN_SERVER = [];
+          TOTAL_SERVER = 0;
+          TERBACA_SERVER = '';
+
+          tampilkanPesanGagal(galatTerakhir);
+          render();
+        });
       }
 
       /* ---------------- Render ---------------- */
@@ -627,11 +733,8 @@
       /* ---------------- Detail dokumen (langkah 4-5) ---------------- */
       var detailSekarang = null;
 
-      function bukaDetail(idx) {
-        var d = dokumenTampil[idx];
-        if (!d) return;
-        detailSekarang = d;
-
+      /** Menggambar isi modal detail dari satu objek dokumen. */
+      function gambarDetail(d, catatan) {
         var t = tingkat(d.skor);
         var rincian = '';
         if (d.rincian && d.rincian.length) {
@@ -648,7 +751,14 @@
             '</span></div>'
           : '';
 
+        // Catatan tambahan pada modal (mis. data sudah dihapus atau galat server).
+        var peringatan = catatan
+          ? '<div class="alert alert-warning border small mb-3" role="alert">'
+              + '<i class="bi bi-exclamation-triangle-fill me-1"></i>' + catatan + '</div>'
+          : '';
+
         document.getElementById('modalDetailIsi').innerHTML =
+          peringatan +
           '<div class="d-flex align-items-start gap-3 mb-3">' +
             '<span class="file-badge-sm" style="width:46px;height:46px;flex:0 0 46px;font-size:1.3rem">' +
               '<i class="bi ' + iconBerkas(d.berkas) + '"></i></span>' +
@@ -691,16 +801,52 @@
                 'Dokumen ini belum memiliki hasil pemeriksaan sehingga belum dapat dibuka.' +
               '</div>');
 
-        btnLihatHasil.classList.toggle('d-none', typeof d.skor !== 'number');
+        btnLihatHasil.classList.toggle('d-none', typeof d.skor !== 'number' || !d.id);
+      }
+
+      /** Membuka modal detail lalu mengambil rekaman lengkapnya dari server. */
+      function bukaDetail(idx) {
+        var d = dokumenTampil[idx];
+        if (!d) return;
+
+        detailSekarang = d;
+        btnLihatHasil.classList.add('d-none');
+        document.getElementById('modalDetailIsi').innerHTML =
+          '<div class="text-center text-secondary py-4">' +
+            '<span class="spinner-border spinner-border-sm me-2"></span>Memuat detail dokumen\u2026' +
+          '</div>';
         modal().show();
+
+        if (!d.id) {
+          gambarDetail(d, 'Rekaman lengkap dokumen ini belum tersedia di server.');
+          return;
+        }
+
+        // Detail diambil dari server: GET /api/results/:id
+        IPPL.minta('/api/results/' + encodeURIComponent(d.id)).then(function (rekaman) {
+          detailSekarang = dariRekamanLengkap(d, rekaman);
+          gambarDetail(detailSekarang, '');
+        }).catch(function (err) {
+          detailSekarang = d;
+
+          // HTTP 404: rekaman sudah tidak ada di server.
+          if (err && err.status === 404) {
+            gambarDetail(d, 'Detail dokumen tidak dapat ditemukan di server. '
+              + 'Kemungkinan data sudah dihapus.');
+            return;
+          }
+
+          gambarDetail(d, IPPL.esc(IPPL.pesanGalat(err))
+            + (err && err.status === 401
+              ? ' <a href="login-admin.html?next=admin-dokumen.html">Masuk kembali</a>.'
+              : ''));
+        });
       }
 
       btnLihatHasil.addEventListener('click', function () {
-        if (!detailSekarang || !detailSekarang.hasil) return;
-        try {
-          sessionStorage.setItem('hasilAnalisis', JSON.stringify(detailSekarang.hasil));
-        } catch (err) { /* result.html akan memakai data contoh bila storage diblokir */ }
-        window.location.href = 'result.html';
+        if (!detailSekarang || !detailSekarang.id) return;
+        // result.html memuat hasil lengkap langsung dari server (GET /api/results/:id).
+        window.location.href = 'result.html?id=' + encodeURIComponent(detailSekarang.id);
       });
 
       /* ---------------- Event ---------------- */
@@ -709,16 +855,26 @@
         if (tombol) bukaDetail(parseInt(tombol.getAttribute('data-detail'), 10));
       });
 
-      inputCari.addEventListener('input', render);
-      filterJenis.addEventListener('change', render);
-      filterStatus.addEventListener('change', render);
-      selectMode.addEventListener('change', render);
-      document.getElementById('btnMuatUlang').addEventListener('click', function () {
-        selectMode.value = 'normal';
-        render();
+      // Pencarian dikirim ke server dengan penundaan (debounce) 300 ms.
+      var jamCari = null;
+      inputCari.addEventListener('input', function () {
+        if (jamCari) window.clearTimeout(jamCari);
+        jamCari = window.setTimeout(function () {
+          jamCari = null;
+          muatDokumen();
+        }, 300);
       });
 
-      render();
+      filterJenis.addEventListener('change', muatDokumen);   // filter server
+      filterStatus.addEventListener('change', render);       // filter tampilan
+      selectMode.addEventListener('change', muatDokumen);
+      document.getElementById('btnMuatUlang').addEventListener('click', function () {
+        selectMode.value = 'normal';
+        muatDokumen();
+      });
+
+      // Muat daftar dokumen dari server (GET /api/admin/documents).
+      muatDokumen();
     })();
   </script>
 </body>

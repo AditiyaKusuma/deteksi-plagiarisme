@@ -1251,10 +1251,12 @@ function infoFallback(peringatan) {
 }
 
 /** Melengkapi hasil analisis dengan metadata dokumen & ringkasan teks. */
-function lengkapiAnalisis(hasilInti, meta, ekstraksi) {
+function lengkapiAnalisis(hasilInti, meta, ekstraksi, req) {
   return {
     ...hasilInti,
     document_metadata: {
+      user_id: req && req.pengguna ? req.pengguna.id : null,
+      user_email: req && req.pengguna ? req.pengguna.email : null,
       nim: meta.nim,
       nama: meta.nama,
       judul: meta.judul,
@@ -1279,7 +1281,7 @@ function lengkapiAnalisis(hasilInti, meta, ekstraksi) {
  * @returns {Promise<{analisis:object, info:object}>}
  * @throws {AppError} 500 bila analisis LLM gagal dan fallback dimatikan
  */
-async function analisisDokumen(meta, ekstraksi) {
+async function analisisDokumen(meta, ekstraksi, req) {
   /* ---- LLM belum dikonfigurasi ---- */
   if (!llmSiap()) {
     const pesan = 'Analisis AI belum dikonfigurasi: aktifkan layanan AI dan isi kunci API '
@@ -1292,7 +1294,7 @@ async function analisisDokumen(meta, ekstraksi) {
     }
     console.warn(`[llm] ${pesan} -> memakai fallback simulasi (LLM_FALLBACK_SIMULASI=true).`);
     return {
-      analisis: lengkapiAnalisis(simulasikanAnalisis(), meta, ekstraksi),
+      analisis: lengkapiAnalisis(simulasikanAnalisis(), meta, ekstraksi, req),
       info: infoFallback(pesan),
     };
   }
@@ -1301,7 +1303,7 @@ async function analisisDokumen(meta, ekstraksi) {
   try {
     const keluaran = await analisisDenganLLM(meta, ekstraksi);
     return {
-      analisis: lengkapiAnalisis(keluaran.hasil, meta, ekstraksi),
+      analisis: lengkapiAnalisis(keluaran.hasil, meta, ekstraksi, req),
       info: keluaran.info,
     };
   } catch (err) {
@@ -1323,7 +1325,7 @@ async function analisisDokumen(meta, ekstraksi) {
     const alasan = `analisis LLM gagal: ${sebab}`;
     console.warn(`[llm] ${alasan} -> memakai fallback simulasi.`);
     return {
-      analisis: lengkapiAnalisis(simulasikanAnalisis(), meta, ekstraksi),
+      analisis: lengkapiAnalisis(simulasikanAnalisis(), meta, ekstraksi, req),
       info: infoFallback(alasan),
     };
   }
@@ -1591,8 +1593,7 @@ async function tanganiUnggah(req, res, next) {
     const judul         = ambilField(req.body, 'judul', 'judul_dokumen', 'judulDokumen', 'title');
     const jenisMasukan  = ambilField(req.body, 'jenis_dokumen', 'jenisDokumen', 'jenis', 'jenisKode', 'type');
 
-    if (!nim) throw new AppError(400, 'Metadata "nim" wajib diisi.');
-    if (!/^[0-9]{8,12}$/.test(nim)) {
+    if (nim && !/^[0-9]{8,12}$/.test(nim)) {
       throw new AppError(400, 'Metadata "nim" harus berupa angka 8-12 digit.', { nim });
     }
     if (!judul) throw new AppError(400, 'Metadata "judul" wajib diisi.');
@@ -1615,7 +1616,7 @@ async function tanganiUnggah(req, res, next) {
       nama: nama || 'Tidak disebutkan',
       judul,
       jenis_dokumen: jenisDokumen,
-    }, ekstraksi);
+    }, ekstraksi, req);
 
     console.log(`[analisis] ${info.label} | skor ${analisis.overall_similarity_score}% `
       + `(${analisis.classification_level}) | ${analisis.flagged_passages.length} temuan `
@@ -1689,7 +1690,7 @@ const terimaBerkas = (req, res, next) => {
 
 router.post('/upload', terimaBerkas, tanganiUnggah);
 router.post('/documents', terimaBerkas, tanganiUnggah);          // alias dipakai di upload.html
-router.post('/documents/analyze', terimaBerkas, tanganiUnggah);  // alias "analyze" (lihat proses.html)
+router.post('/documents/analyze', terimaBerkas, tanganiUnggah);  // alias "analyze" (lihat upload.html)
 
 /* ---------------------- GET /api/history & /api/results ------------------ */
 /** Filter & paging sederhana untuk daftar riwayat. */
@@ -1729,8 +1730,35 @@ function daftarRiwayat(query) {
   return { total: data.length, limit, offset, data: data.slice(offset, offset + limit) };
 }
 
-router.get('/history', (req, res) => {
-  const { total, limit, offset, data } = daftarRiwayat(req.query);
+router.get('/history', wajibLogin, (req, res) => {
+  // Filter otomatis per user yang login
+  const pengguna = req.pengguna;
+  const userId = pengguna ? pengguna.id : null;
+  
+  // User non-admin: hanya lihat riwayat mereka sendiri
+  const query = req.query;
+  if (pengguna.peran !== 'Administrator' && userId) {
+    let data = dbHasilAnalisis.slice();
+    // Filter by user_id
+    data = data.filter((r) => r.document_metadata && r.document_metadata.user_id === userId);
+    
+    const limit = Math.min(Math.max(parseInt(query.limit, 10) || 50, 1), 200);
+    const offset = Math.max(parseInt(query.offset, 10) || 0, 0);
+    const total = data.length;
+    
+    res.set('X-Total-Count', String(total));
+    return res.json({
+      status: 'success',
+      total,
+      count: data.slice(offset, offset + limit).length,
+      limit,
+      offset,
+      data: data.slice(offset, offset + limit),
+    });
+  }
+  
+  // Admin: tampilkan semua atau filter by query
+  const { total, limit, offset, data } = daftarRiwayat(query);
   res.set('X-Total-Count', String(total));
   res.json({
     status: 'success',

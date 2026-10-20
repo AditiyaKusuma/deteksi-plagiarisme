@@ -3,6 +3,172 @@
     "status": "success",
     "overall_similarity_score": 28,
     "classification_level": "Sedang",
+    "structure_analysis": {
+      "Cover / Halaman Judul": true,
+      "Bab I Pendahuluan": true,
+      "Bab II Tinjauan Pustaka": true,
+      "Bab III Metodologi": false
+    },
+    "flagged_passages": [
+      {
+        "text": "Pengembangan aplikasi deteksi plagiarisme menggunakan kecerdasan buatan berbasis Large Language Model...",
+        "similarity_percentage": 85,
+        "source_reference": "Repository TA 2024 - 'Deteksi Plagiat Teks Menggunakan LLM'"
+      }
+    ],
+    "document_metadata": {
+      "user_id": null,
+      "user_email": null,
+      "nim": "",
+      "nama": "Tidak disebutkan",
+      "judul": "ARUH VARIASI WAKTU CELUP TEMBAGA  PROSES ELEKTROPLATING TEMBAGA, NIKEL DAN KROM TERHADAP CACAT VIBROUS  PADA ALUMUNIUM 110",
+      "jenis_dokumen": "Proposal Tugas Akhir"
+    },
+    "teks_dokumen": {
+      "format": "pdf",
+      "jumlah_karakter": 17778,
+      "jumlah_kata": 1688,
+      "jumlah_halaman": 19,
+      "cuplikan": "TUGAS AKHIR\nPENGARUH VARIASI WAKTU CELUP TEMBAGA\nPROSES ELEKTROPLATING TEMBAGA, NIKEL\nDAN KROM TERHADAP CACAT VIBROUS\nPADA ALUMUNIUM 1100\n0\nTugas Akhir Ini Disusun Guna Memperoleh Gelar Sarjana\nStrata Satu Jurusan Teknik Mesin Fakultas Teknik\nUniversitas Muhammadiyah Surakarta\nDisusun Oleh:\nALBERT A"
+    },
+    "id": "PLG-20261020-74CFCFFA",
+    "created_at": "2026-10-20T03:49:47.185Z",
+    "analysis_engine": "simulasi-llm-v1 (fallback, mock data progress 30%)",
+    "llm": {
+      "mode": "simulasi-fallback",
+      "model": null,
+      "endpoint_host": null,
+      "json_mode": null,
+      "percobaan": 0,
+      "durasi_ms": 0,
+      "jumlah_kata_terkirim": null,
+      "teks_dipotong": false,
+      "token": null,
+      "peringatan": "Analisis AI belum dikonfigurasi: aktifkan layanan AI dan isi kunci API pada panel Admin \"Pengaturan AI\" (data/ai-config.json), atau isi LLM_API_KEY pada berkas .env."
+    },
+    "berkas": {
+      "nama_asli": "contoh proposal.pdf",
+      "nama_tersimpan": "dokumen-1792468187050-829ee332.pdf",
+      "ekstensi": ".pdf",
+      "mime_type": "application/pdf",
+      "ukuran_byte": 118000,
+      "ukuran": "115.2 KB"
+    }
+  },
+  {
+    "status": "success",
+    "overall_similarity_score": 28,
+    "classification_level": "Sedang",
+    "structure_analysis": {
+      "Cover / Halaman Judul": true,
+      "Bab I Pendahuluan": true,
+      "Bab II Tinjauan Pustaka": true,
+      "Bab III Metodologi": false
+    },
+    "flagged_passages": [
+      {
+        "text": "Pengembangan aplikasi deteksi plagiarisme menggunakan kecerdasan buatan berbasis Large Language Model...",
+        "similarity_percentage": 85,
+        "source_reference": "Repository TA 2024 - 'Deteksi Plagiat Teks Menggunakan LLM'"
+      }
+    ],
+    "document_metadata": {
+      "user_id": null,
+      "user_email": null,
+      "nim": "",
+      "nama": "Tidak disebutkan",
+      "judul": "ARUH VARIASI WAKTU CELUP TEMBAGA  PROSES ELEKTROPLATING TEMBAGA, NIKEL DAN KROM TERHADAP CACAT VIBROUS  PADA ALUMUNIUM 110",
+      "jenis_dokumen": "Proposal Tugas Akhir"
+    },
+    "teks_dokumen": {
+      "format": "pdf",
+      "jumlah_karakter": 17778,
+      "jumlah_kata": 1688,
+      "jumlah_halaman": 19,
+      "cuplikan": "TUGAS AKHIR\nPENGARUH VARIASI WAKTU CELUP TEMBAGA\nPROSES ELEKTROPLATING TEMBAGA, NIKEL\nDAN KROM TERHADAP CACAT VIBROUS\nPADA ALUMUNIUM 1100\n0\nTugas Akhir Ini Disusun Guna Memperoleh Gelar Sarjana\nStrata Satu Jurusan Teknik Mesin Fakultas Teknik\nUniversitas Muhammadiyah Surakarta\nDisusun Oleh:\nALBERT A"
+    },
+    "id": "PLG-20261020-7ABA3513",
+    "created_at": "2026-10-20T03:47:36.420Z",
+    "analysis_engine": "simulasi-llm-v1 (fallback, mock data progress 30%)",
+    "llm": {
+      "mode": "simulasi-fallback",
+      "model": null,
+      "endpoint_host": null,
+      "json_mode": null,
+      "percobaan": 0,
+      "durasi_ms": 0,
+      "jumlah_kata_terkirim": null,
+      "teks_dipotong": false,
+      "token": null,
+      "peringatan": "Analisis AI belum dikonfigurasi: aktifkan layanan AI dan isi kunci API pada panel Admin \"Pengaturan AI\" (data/ai-config.json), atau isi LLM_API_KEY pada berkas .env."
+    },
+    "berkas": {
+      "nama_asli": "contoh proposal.pdf",
+      "nama_tersimpan": "dokumen-1792468056075-ab560e9d.pdf",
+      "ekstensi": ".pdf",
+      "mime_type": "application/pdf",
+      "ukuran_byte": 118000,
+      "ukuran": "115.2 KB"
+    }
+  },
+  {
+    "status": "success",
+    "overall_similarity_score": 28,
+    "classification_level": "Sedang",
+    "structure_analysis": {
+      "Cover / Halaman Judul": true,
+      "Bab I Pendahuluan": true,
+      "Bab II Tinjauan Pustaka": true,
+      "Bab III Metodologi": false
+    },
+    "flagged_passages": [
+      {
+        "text": "Pengembangan aplikasi deteksi plagiarisme menggunakan kecerdasan buatan berbasis Large Language Model...",
+        "similarity_percentage": 85,
+        "source_reference": "Repository TA 2024 - 'Deteksi Plagiat Teks Menggunakan LLM'"
+      }
+    ],
+    "document_metadata": {
+      "nim": "",
+      "nama": "Tidak disebutkan",
+      "judul": "ARUH VARIASI WAKTU CELUP TEMBAGA  PROSES ELEKTROPLATING TEMBAGA, NIKEL DAN KROM TERHADAP CACAT VIBROUS  PADA ALUMUNIUM 110",
+      "jenis_dokumen": "Proposal Tugas Akhir"
+    },
+    "teks_dokumen": {
+      "format": "pdf",
+      "jumlah_karakter": 17778,
+      "jumlah_kata": 1688,
+      "jumlah_halaman": 19,
+      "cuplikan": "TUGAS AKHIR\nPENGARUH VARIASI WAKTU CELUP TEMBAGA\nPROSES ELEKTROPLATING TEMBAGA, NIKEL\nDAN KROM TERHADAP CACAT VIBROUS\nPADA ALUMUNIUM 1100\n0\nTugas Akhir Ini Disusun Guna Memperoleh Gelar Sarjana\nStrata Satu Jurusan Teknik Mesin Fakultas Teknik\nUniversitas Muhammadiyah Surakarta\nDisusun Oleh:\nALBERT A"
+    },
+    "id": "PLG-20261020-9CC0195E",
+    "created_at": "2026-10-20T03:11:53.913Z",
+    "analysis_engine": "simulasi-llm-v1 (fallback, mock data progress 30%)",
+    "llm": {
+      "mode": "simulasi-fallback",
+      "model": null,
+      "endpoint_host": null,
+      "json_mode": null,
+      "percobaan": 0,
+      "durasi_ms": 0,
+      "jumlah_kata_terkirim": null,
+      "teks_dipotong": false,
+      "token": null,
+      "peringatan": "Analisis AI belum dikonfigurasi: aktifkan layanan AI dan isi kunci API pada panel Admin \"Pengaturan AI\" (data/ai-config.json), atau isi LLM_API_KEY pada berkas .env."
+    },
+    "berkas": {
+      "nama_asli": "contoh proposal.pdf",
+      "nama_tersimpan": "dokumen-1792465913617-994d7494.pdf",
+      "ekstensi": ".pdf",
+      "mime_type": "application/pdf",
+      "ukuran_byte": 118000,
+      "ukuran": "115.2 KB"
+    }
+  },
+  {
+    "status": "success",
+    "overall_similarity_score": 28,
+    "classification_level": "Sedang",
     "document_metadata": {
       "nim": "11241002",
       "nama": "Ni Kadek Contoh",

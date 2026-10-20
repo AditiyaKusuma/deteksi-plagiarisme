@@ -104,7 +104,6 @@
         <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
           <li class="nav-item"><a class="nav-link" href="index.html"><i class="bi bi-house-door me-1"></i>Beranda</a></li>
           <li class="nav-item"><a class="nav-link active" href="upload.html"><i class="bi bi-cloud-arrow-up me-1"></i>Unggah Dokumen</a></li>
-          <li class="nav-item"><a class="nav-link" href="proses.html"><i class="bi bi-activity me-1"></i>Proses Pemeriksaan</a></li>
           <li class="nav-item"><a class="nav-link" href="riwayat.html"><i class="bi bi-clock-history me-1"></i>Riwayat</a></li>
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
@@ -155,40 +154,13 @@
                 <div class="invalid-feedback">Judul dokumen wajib diisi (minimal 5 karakter).</div>
               </div>
 
-              <!-- Nama Mahasiswa -->
+              <!-- Jenis Dokumen -->
               <div class="mb-3">
-                <label for="nama" class="form-label fw-semibold">
-                  Nama Mahasiswa <span class="text-danger">*</span>
-                </label>
-                <div class="input-group has-validation">
-                  <span class="input-group-text"><i class="bi bi-person"></i></span>
-                  <input type="text" class="form-control" id="nama" name="nama"
-                         placeholder="Nama lengkap mahasiswa" maxlength="100" minlength="3" required>
-                  <div class="invalid-feedback">Nama mahasiswa wajib diisi (minimal 3 karakter).</div>
-                </div>
-              </div>
-
-              <!-- NIM + Jenis -->
-              <div class="row g-3 mb-3">
-                <div class="col-md-6">
-                  <label for="nim" class="form-label fw-semibold">
-                    NIM <span class="text-danger">*</span>
-                  </label>
-                  <div class="input-group has-validation">
-                    <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
-                    <input type="text" class="form-control" id="nim" name="nim"
-                           inputmode="numeric" placeholder="11241002" maxlength="12"
-                           pattern="[0-9]{8,12}" required>
-                    <div class="invalid-feedback">NIM wajib diisi berupa angka 8&ndash;12 digit.</div>
-                  </div>
-                </div>
-                <div class="col-md-6">
-                  <label for="jenis" class="form-label fw-semibold">Jenis Dokumen</label>
-                  <select class="form-select" id="jenis" name="jenis">
-                    <option value="proposal" selected>Proposal Tugas Akhir</option>
-                    <option value="laporan">Laporan Tugas Akhir</option>
-                  </select>
-                </div>
+                <label for="jenis" class="form-label fw-semibold">Jenis Dokumen</label>
+                <select class="form-select" id="jenis" name="jenis">
+                  <option value="proposal" selected>Proposal Tugas Akhir</option>
+                  <option value="laporan">Laporan Tugas Akhir</option>
+                </select>
               </div>
 
               <!-- File picker -->
@@ -315,8 +287,6 @@
       // ====== Elemen ======
       var form        = document.getElementById('formUpload');
       var inputJudul  = document.getElementById('judul');
-      var inputNama   = document.getElementById('nama');
-      var inputNim    = document.getElementById('nim');
       var inputJenis  = document.getElementById('jenis');
       var dropzone    = document.getElementById('dropzone');
       var fileInput   = document.getElementById('fileInput');
@@ -354,8 +324,7 @@
       if (sesi.email) navNama.title = sesi.email;
 
       // Nama & NIM diisi dari akun yang sedang masuk (masih bisa diubah bila perlu).
-      if (sesi.nim) inputNim.value = sesi.nim;
-      if (sesi.nama && sesi.nama !== 'Tamu') inputNama.value = sesi.nama;
+      // DIHAPUS: inputNim & inputNama sudah tidak ada di form
 
       document.getElementById('navLogout').addEventListener('click', function (e) {
         e.preventDefault();
@@ -608,8 +577,6 @@
 
         // ---- FormData sesuai kontrak POST /api/upload ----
         var fd = new FormData();
-        fd.append('nim', inputNim.value.trim());
-        fd.append('nama', inputNama.value.trim());
         fd.append('judul', inputJudul.value.trim());
         fd.append('jenis_dokumen', inputJenis.value);   // 'proposal' | 'laporan'
         fd.append('file', berkas, berkas.name);         // PDF / DOC / DOCX

@@ -178,6 +178,19 @@
           </table>
         </div>
 
+        <!-- Paginasi daftar -->
+        <div class="d-none justify-content-between align-items-center px-3 py-2 border-top" id="paginasi">
+          <small class="text-secondary" id="infoPaginasi"></small>
+          <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-outline-secondary" id="btnSebelum">
+              <i class="bi bi-chevron-left me-1"></i>Sebelumnya
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="btnSesudah">
+              Berikutnya<i class="bi bi-chevron-right ms-1"></i>
+            </button>
+          </div>
+        </div>
+
         <!-- Kosong -->
         <div class="empty-state d-none" id="emptyState">
           <div class="icon mb-2"><i class="bi bi-inbox"></i></div>
@@ -266,6 +279,16 @@
       var elUrut     = document.getElementById('urutkan');
       var elToolbar  = document.getElementById('toolbar');
       var elRingkas  = document.getElementById('ringkasanRow');
+      var elPaginasi = document.getElementById('paginasi');
+      var elInfoPag  = document.getElementById('infoPaginasi');
+      var btnSebelum = document.getElementById('btnSebelum');
+      var btnSesudah = document.getElementById('btnSesudah');
+
+      /** Jumlah baris per halaman dan halaman yang sedang ditampilkan. */
+      var PER_HALAMAN = 10;
+      var HALAMAN = 1;
+      /** Hasil filter+urutkan terakhir, dipakai oleh kontrol paginasi. */
+      var TERFILTER = [];
 
       /** Riwayat dari server; diisi ulang setiap kali muatRiwayat() selesai. */
       var RIWAYAT = [];
@@ -289,6 +312,7 @@
             return d.dokumen && typeof d.skor === 'number';
           });
 
+          HALAMAN = 1;
           renderRingkasan();
           render();
 
@@ -391,6 +415,7 @@
         if (!data.length) {
           elTabel.classList.add('d-none');
           elKosong.classList.remove('d-none');
+          sembunyikanPaginasi();
           if (!RIWAYAT.length) {
             elJudulK.textContent = 'Riwayat pemeriksaan belum tersedia';
             elPesanK.textContent = 'Belum ada dokumen yang kamu periksa. Unggah proposal atau laporan Tugas Akhir untuk memulai.';
@@ -403,8 +428,52 @@
 
         elKosong.classList.add('d-none');
         elTabel.classList.remove('d-none');
-        elIsi.innerHTML = data.map(baris).join('');
+
+        // ---- paginasi: tampilkan hanya PER_HALAMAN baris per halaman ----
+        TERFILTER = data;
+        var totalHalaman = Math.max(Math.ceil(data.length / PER_HALAMAN), 1);
+        if (HALAMAN > totalHalaman) HALAMAN = totalHalaman;
+        if (HALAMAN < 1) HALAMAN = 1;
+
+        var awal = (HALAMAN - 1) * PER_HALAMAN;
+        var halamanIni = data.slice(awal, awal + PER_HALAMAN);
+
+        elIsi.innerHTML = halamanIni.map(baris).join('');
+        tampilkanPaginasi(awal, halamanIni.length, data.length, totalHalaman);
       }
+
+      /** Menampilkan info "x-y dari z" dan tombol navigasi halaman. */
+      function tampilkanPaginasi(awal, jumlah, total, totalHalaman) {
+        if (total <= PER_HALAMAN) {
+          sembunyikanPaginasi();
+          return;
+        }
+        elInfoPag.textContent = 'Menampilkan ' + (awal + 1) + '-' + (awal + jumlah)
+          + ' dari ' + total + ' riwayat';
+        btnSebelum.disabled = HALAMAN <= 1;
+        btnSesudah.disabled = HALAMAN >= totalHalaman;
+        elPaginasi.classList.remove('d-none');
+        elPaginasi.classList.add('d-flex');
+      }
+
+      function sembunyikanPaginasi() {
+        elPaginasi.classList.add('d-none');
+        elPaginasi.classList.remove('d-flex');
+        TERFILTER = [];
+      }
+
+      btnSebelum.addEventListener('click', function () {
+        if (HALAMAN <= 1) return;
+        HALAMAN -= 1;
+        render();
+      });
+
+      btnSesudah.addEventListener('click', function () {
+        var totalHalaman = Math.max(Math.ceil(TERFILTER.length / PER_HALAMAN), 1);
+        if (HALAMAN >= totalHalaman) return;
+        HALAMAN += 1;
+        render();
+      });
 
       // ====== buka hasil ======
       elIsi.addEventListener('click', function (e) {
@@ -444,9 +513,15 @@
       });
 
       // ====== filter & sort ======
-      elCari.addEventListener('input', render);
-      elJenis.addEventListener('change', render);
-      elUrut.addEventListener('change', render);
+      /** Perubahan filter/urutan selalu kembali ke halaman pertama. */
+      function renderDariAwal() {
+        HALAMAN = 1;
+        render();
+      }
+
+      elCari.addEventListener('input', renderDariAwal);
+      elJenis.addEventListener('change', renderDariAwal);
+      elUrut.addEventListener('change', renderDariAwal);
 
       // Muat riwayat dari server (GET /api/history).
       muatRiwayat();

@@ -21,6 +21,7 @@ node_modules/
 data/uploads/
 data/users.json
 data/ai-config.json
+data/hasil-analisis.json
 data/*.tmp
 
 # ---- Log pengujian ----

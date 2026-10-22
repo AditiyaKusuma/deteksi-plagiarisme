@@ -816,7 +816,8 @@ function promptSistem() {
  * Menyusun pesan yang dikirim ke LLM: prompt sistem + data dokumen.
  * @param {object} meta metadata dokumen (nim, nama, judul, jenis_dokumen)
  * @param {string} teks teks dokumen yang akan dianalisis
- * @param {{dipotong:boolean, totalKata:number}} infoPanjang keterangan panjang teks
+ * @param {{dipotong:boolean, totalKata:number, bagian?:{nomor:number,jumlah:number}}} infoPanjang
+ *   keterangan panjang teks; "bagian" diisi bila dokumen dianalisis bertahap.
  * @returns {{system:string, user:string}}
  */
 function susunPromptAnalisis(meta, teks, infoPanjang) {
@@ -829,7 +830,10 @@ function susunPromptAnalisis(meta, teks, infoPanjang) {
       `- Judul          : ${meta.judul}`,
       `- Jenis Dokumen  : ${meta.jenis_dokumen}`,
       `- Jumlah Kata    : ${infoPanjang.totalKata}`
-        + (infoPanjang.dipotong ? ' (hanya sebagian awal yang dikirim)' : ''),
+        + (infoPanjang.dipotong ? ' (hanya sebagian awal yang dikirim)' : '')
+        + (infoPanjang.bagian
+          ? ` (bagian ${infoPanjang.bagian.nomor} dari ${infoPanjang.bagian.jumlah})`
+          : ''),
       '',
       'TEKS DOKUMEN',
       '"""',
@@ -1024,10 +1028,16 @@ async function panggilApiGemini(prompt, pakaiJsonMode, signal) {
   return { isi, model: data.modelVersion || k.model, penggunaan };
 }
 
+/** Jeda non-blocking sebelum mencoba ulang panggilan LLM. */
+function jedaMs(ms) {
+  return new Promise((selesai) => setTimeout(selesai, ms));
+}
+
 /**
  * Mengirim prompt ke LLM dan mengembalikan isi balasannya.
  * Pada LLM_JSON_MODE=auto, bila penyedia menolak JSON mode (HTTP 400),
- * panggilan diulang sekali tanpa JSON mode.
+ * panggilan diulang sekali tanpa JSON mode. Balasan 429 (rate limit) dan 503
+ * (penyedia sibuk) diulang maksimal dua kali dengan jeda menaik.
  * @returns {Promise<{isi:string, model:string, penggunaan:object|null,
  *                    json_mode:boolean, percobaan:number}>}
  * @throws {AppError} 400/502/504 bila panggilan gagal
@@ -1036,6 +1046,7 @@ async function panggilLLM(prompt) {
   let pakaiJsonMode = LLM_JSON_MODE !== 'off';
   const bolehUlang  = LLM_JSON_MODE === 'auto';
   let percobaan     = 0;
+  let ulangSibuk     = 0;
 
   for (;;) {
     percobaan += 1;
@@ -1049,6 +1060,24 @@ async function panggilLLM(prompt) {
         pakaiJsonMode = false;
         continue;
       }
+
+      // Penyedia sibuk / kena rate limit: tunggu sebentar lalu ulangi.
+      // Status asli penyedia ada di detail.status_llm karena AppError selalu
+      // dibungkus menjadi 502 agar klien tidak melihat kode internal mentah.
+      const statusPenyedia = err instanceof AppError
+        ? (err.detail && err.detail.status_llm) || err.statusCode
+        : null;
+      const bisaDiulang = statusPenyedia === 429 || statusPenyedia === 500
+        || statusPenyedia === 503;
+      if (bisaDiulang && ulangSibuk < 2) {
+        ulangSibuk += 1;
+        const jeda = ulangSibuk * 2000;
+        console.warn(`[llm] penyedia membalas HTTP ${statusPenyedia}; `
+          + `mencoba lagi dalam ${jeda} ms (${ulangSibuk}/2).`);
+        await jedaMs(jeda);
+        continue;
+      }
+
       throw err;
     }
   }
@@ -1157,40 +1186,247 @@ function normalisasiHasilLLM(mentah) {
   };
 }
 
+/* ---- 5.6b Kelengkapan keluaran, koreksi otomatis, & analisis bertahap --- */
+
+/** Ukuran bagian dokumen panjang (kata per panggilan LLM). */
+// Dibatasi agar satu panggilan tetap di bawah 30 detik (spesifikasi). Uji nyata
+// gemini-3.5-flash: 1.500 kata ~8 s, 3.000 kata ~6 s, 5.000 kata ~5 s, sehingga
+// 4.000 kata masih menyisakan margin lebar; model penalar yang lebih lambat
+// tetap tertahan oleh batas waktu per panggilan.
+const TARGET_KATA_BAGIAN = 4000;
+
+/** Maksimal bagian yang dianalisis (batas biaya & waktu). */
+const MAKS_BAGIAN_ANALISIS = 5;
+
+/**
+ * Daftar bagian wajib yang tidak ada pada keluaran LLM ([] = lengkap).
+ * Dipakai opsi panel Admin "koreksiOtomatis": bila tidak kosong, satu panggilan
+ * ulang dilakukan dengan instruksi perbaikan.
+ * @param {*} mentah hasil JSON.parse keluaran LLM
+ * @returns {string[]}
+ */
+function bagianKurangLengkap(mentah) {
+  if (!mentah || typeof mentah !== 'object' || Array.isArray(mentah)) {
+    return ['objek JSON'];
+  }
+
+  const kurang = [];
+
+  const adaSkor = [mentah.overall_similarity_score, mentah.skor, mentah.similarity_score]
+    .some((nilai) => nilai !== undefined && Number.isFinite(Number(nilai)));
+  if (!adaSkor) kurang.push('overall_similarity_score');
+
+  const mentahStruktur = mentah.structure_analysis || mentah.struktur;
+  if (!mentahStruktur || typeof mentahStruktur !== 'object' || Array.isArray(mentahStruktur)) {
+    kurang.push('structure_analysis');
+  } else {
+    const kunciAda = new Set(Object.keys(mentahStruktur).map(kunciLonggar));
+    STRUKTUR_DOKUMEN.forEach((nama) => {
+      const alias = ALIAS_STRUKTUR[nama] || [nama];
+      if (!alias.some((a) => kunciAda.has(kunciLonggar(a)))) {
+        kurang.push(`structure_analysis["${nama}"]`);
+      }
+    });
+  }
+
+  if (!Array.isArray(mentah.flagged_passages) && !Array.isArray(mentah.temuan)) {
+    kurang.push('flagged_passages');
+  }
+
+  return kurang;
+}
+
+/**
+ * Memecah teks menjadi beberapa bagian bila melebihi ukuran satu panggilan.
+ * Tujuannya agar dokumen TA yang panjang (mis. 60 halaman) tidak dipotong
+ * diam-diam, tanpa membuat satu panggilan LLM melewati batas waktunya.
+ * Bagian diambil berurutan; sisa di atas MAKS_BAGIAN_ANALISIS ditandai terpotong.
+ * @returns {{bagian:Array<{teks:string, kata:number, nomor:number}>,
+ *            terpotong:boolean, totalKata:number}|null} null bila cukup satu panggilan
+ */
+function pecahTeksMenjadiBagian(teks, targetKata) {
+  const kata = String(teks || '').split(/\s+/).filter(Boolean);
+  if (kata.length <= targetKata) return null;
+
+  const jumlahBagian = Math.min(Math.ceil(kata.length / targetKata), MAKS_BAGIAN_ANALISIS);
+  const bagian = [];
+
+  for (let i = 0; i < jumlahBagian; i += 1) {
+    const potong = kata.slice(i * targetKata, (i + 1) * targetKata);
+    if (potong.length) {
+      bagian.push({ teks: potong.join(' '), kata: potong.length, nomor: i + 1 });
+    }
+  }
+  if (bagian.length < 2) return null;
+
+  return {
+    bagian,
+    terpotong: kata.length > bagian.length * targetKata,
+    totalKata: kata.length,
+  };
+}
+
+/**
+ * Menggabungkan hasil beberapa bagian menjadi satu hasil akhir.
+ * Skor diambil rata-rata berbobot jumlah kata; struktur = OR (bagian yang
+ * memuat bab tersebut menang); temuan digabung, diurutkan, dan dibatasi 10.
+ * @param {Array<{hasil:object, kata:number}>} daftar
+ * @returns {object} hasil sesuai kontrak frontend
+ */
+function gabungHasilBagian(daftar) {
+  if (!daftar.length) {
+    throw new AppError(502, 'Analisis bertahap tidak menghasilkan keluaran.');
+  }
+  if (daftar.length === 1) return daftar[0].hasil;
+
+  const bobot = daftar.reduce((jumlah, d) => jumlah + d.kata, 0) || 1;
+  const skor  = Math.round(daftar.reduce(
+    (jumlah, d) => jumlah + (d.hasil.overall_similarity_score * d.kata), 0) / bobot);
+
+  const structure_analysis = {};
+  STRUKTUR_DOKUMEN.forEach((nama) => {
+    structure_analysis[nama] = daftar.some((d) => d.hasil.structure_analysis[nama] === true);
+  });
+
+  const temuan = [];
+  const terlihat = new Set();
+  daftar.forEach((d) => {
+    d.hasil.flagged_passages.forEach((t) => {
+      const kunci = kunciLonggar(t.text).slice(0, 80);
+      if (terlihat.has(kunci)) return;
+      terlihat.add(kunci);
+      temuan.push(t);
+    });
+  });
+  temuan.sort((a, b) => b.similarity_percentage - a.similarity_percentage);
+
+  return {
+    status: 'success',
+    overall_similarity_score: skor,
+    classification_level: klasifikasiIndikasi(skor),
+    structure_analysis,
+    flagged_passages: temuan.slice(0, 10),
+  };
+}
+
 /**
  * Analisis dokumen memakai LLM sungguhan.
+ * Dokumen yang melebihi LLM_MAX_KATA dipecah menjadi maksimal MAKS_BAGIAN_ANALISIS
+ * bagian, dianalisis satu per satu, lalu digabung.
+ * Bila panel Admin mengaktifkan koreksiOtomatis, keluaran yang tidak lengkap
+ * diulang sekali dengan instruksi perbaikan.
  * @returns {Promise<{hasil:object, info:object}>}
  * @throws {AppError} 502/504 bila layanan LLM gagal atau keluarannya tidak sah
  */
 async function analisisDenganLLM(meta, ekstraksi) {
-  const teksSiap = siapkanTeksUntukLLM(ekstraksi.teks);
-  const prompt   = susunPromptAnalisis(meta, teksSiap.teks, {
-    dipotong: teksSiap.dipotong,
-    totalKata: ekstraksi.kata,
-  });
-
+  const k = konfigLlm();
   const mulai = Date.now();
-  const balasan = await panggilLLM(prompt);
-  const hasil   = normalisasiHasilLLM(uraiKeluaranLLM(balasan.isi));
+
+  const pecahan = pecahTeksMenjadiBagian(ekstraksi.teks, TARGET_KATA_BAGIAN);
+  let rencana;
+  if (pecahan) {
+    rencana = pecahan.bagian;
+  } else {
+    const teksSiap = siapkanTeksUntukLLM(ekstraksi.teks);
+    rencana = [{ teks: teksSiap.teks, kata: teksSiap.kataTerkirim, nomor: 1,
+      dipotong: teksSiap.dipotong }];
+  }
+
+  const hasilBagian   = [];
+  const token         = { prompt: 0, completion: 0, total: 0, ada: false };
+  let percobaan       = 0;
+  let modelTerakhir   = k.model;
+  let jsonModeAktif   = null;
+  let koreksiDipakai  = false;
+
+  for (const b of rencana) {
+    const prompt = susunPromptAnalisis(meta, b.teks, {
+      dipotong: Boolean(b.dipotong),
+      totalKata: ekstraksi.kata,
+      bagian: pecahan ? { nomor: b.nomor, jumlah: rencana.length } : null,
+    });
+
+    let balasan = await panggilLLM(prompt);
+    percobaan     += balasan.percobaan;
+    modelTerakhir  = balasan.model || modelTerakhir;
+    jsonModeAktif  = balasan.json_mode;
+
+    let mentah = null;
+    let galatUrai = null;
+    try {
+      mentah = uraiKeluaranLLM(balasan.isi);
+    } catch (err) {
+      galatUrai = err;
+    }
+
+    const kurang = galatUrai ? ['JSON tidak dapat dibaca'] : bagianKurangLengkap(mentah);
+
+    if (k.koreksiOtomatis && (galatUrai || kurang.length)) {
+      // Satu panggilan ulang dengan instruksi eksplisit menyebut bagian yang hilang.
+      console.warn(`[llm] koreksi otomatis: keluaran belum lengkap (${kurang.join(', ')}); `
+        + 'mengirim ulang permintaan.');
+      balasan = await panggilLLM({
+        system: prompt.system,
+        user: `${prompt.user}\n\n`
+          + `KELUARAN SEBELUMNYA BELUM LENGKAP: ${kurang.join('; ')}.\n`
+          + 'Kirim ulang HANYA satu objek JSON yang memuat SEMUA kunci pada skema, '
+          + 'dengan nama kunci persis seperti skema. Bila memang tidak ada indikasi '
+          + 'kemiripan, kirim flagged_passages sebagai array kosong.',
+      });
+      percobaan    += balasan.percobaan;
+      modelTerakhir = balasan.model || modelTerakhir;
+      jsonModeAktif = balasan.json_mode;
+      mentah        = uraiKeluaranLLM(balasan.isi);   // masih gagal -> 502
+      koreksiDipakai = true;
+    } else if (galatUrai) {
+      throw galatUrai;
+    }
+
+    if (balasan.penggunaan) {
+      token.ada = true;
+      token.prompt     += Number(balasan.penggunaan.prompt_tokens) || 0;
+      token.completion += Number(balasan.penggunaan.completion_tokens) || 0;
+      token.total      += Number(balasan.penggunaan.total_tokens) || 0;
+    }
+
+    hasilBagian.push({ hasil: normalisasiHasilLLM(mentah), kata: b.kata });
+  }
+
+  const hasil        = gabungHasilBagian(hasilBagian);
+  const kataTerkirim = rencana.reduce((jumlah, b) => jumlah + b.kata, 0);
+  const bertahap     = Boolean(pecahan);
+
+  let peringatan = null;
+  if (bertahap) {
+    peringatan = `Dokumen dianalisis dalam ${rencana.length} bagian (masing-masing `
+      + `maksimal ${TARGET_KATA_BAGIAN} kata); skor akhir adalah rata-rata berbobot.`;
+    if (pecahan.terpotong) {
+      peringatan += ` Hanya ${kataTerkirim} kata pertama dari total ${pecahan.totalKata} kata `
+        + 'yang diperiksa karena batas waktu per panggilan LLM.';
+    }
+  }
 
   return {
     hasil,
     info: {
       mode: 'llm',
-      label: `llm-${penyediaEfektif()}-v1 (${balasan.model})`,
-      model: balasan.model,
+      label: `llm-${penyediaEfektif()}-v1 (${modelTerakhir})`
+        + (bertahap ? ` bertahap-${rencana.length}` : ''),
+      model: modelTerakhir,
       endpoint_host: hostLLM(),
-      json_mode: balasan.json_mode,
-      percobaan: balasan.percobaan,
+      json_mode: jsonModeAktif,
+      percobaan,
       durasi_ms: Date.now() - mulai,
-      jumlah_kata_terkirim: teksSiap.kataTerkirim,
-      teks_dipotong: teksSiap.dipotong,
-      token: balasan.penggunaan ? {
-        prompt: balasan.penggunaan.prompt_tokens === undefined ? null : balasan.penggunaan.prompt_tokens,
-        completion: balasan.penggunaan.completion_tokens === undefined ? null : balasan.penggunaan.completion_tokens,
-        total: balasan.penggunaan.total_tokens === undefined ? null : balasan.penggunaan.total_tokens,
+      jumlah_kata_terkirim: kataTerkirim,
+      teks_dipotong: bertahap ? Boolean(pecahan.terpotong) : Boolean(rencana[0].dipotong),
+      bagian: rencana.length,
+      koreksi: koreksiDipakai,
+      token: token.ada ? {
+        prompt: token.prompt,
+        completion: token.completion,
+        total: token.total,
       } : null,
-      peringatan: null,
+      peringatan,
     },
   };
 }
@@ -1245,6 +1481,8 @@ function infoFallback(peringatan) {
     durasi_ms: 0,
     jumlah_kata_terkirim: null,
     teks_dipotong: false,
+    bagian: 1,
+    koreksi: false,
     token: null,
     peringatan,
   };
@@ -1350,7 +1588,8 @@ const upload = multer({
     const ekstensi = path.extname(file.originalname).toLowerCase();
     if (!ALLOWED_EXT.includes(ekstensi)) {
       return cb(new AppError(400,
-        'Format berkas tidak didukung. Gunakan berkas PDF, DOC, atau DOCX.'));
+        'Format berkas tidak didukung. Gunakan berkas PDF atau DOCX '
+        + '(.doc Word 97-2003 harus disimpan ulang sebagai .docx).'));
     }
     cb(null, true);
   },
@@ -1586,10 +1825,23 @@ async function tanganiUnggah(req, res, next) {
         + 'yang ditetapkan pada panel Pengaturan AI.',
         { maks_ukuran_mb: batasMb, ukuran_byte: berkas.size });
     }
+    // Word 97-2003 (.doc) bukan format ZIP/OOXML sehingga mammoth tidak bisa
+    // membacanya. Ditolak di sini agar pesannya jelas dan kuota LLM tidak terpakai.
+    if (path.extname(berkas.originalname).toLowerCase() === '.doc') {
+      throw new AppError(400,
+        'Format Word 97-2003 (.doc) belum didukung. Buka berkas di Word lalu '
+        + '"Save As" ke .docx (atau ekspor ke PDF), kemudian unggah kembali.',
+        { format: '.doc', didukung: ['pdf', 'docx'] });
+    }
 
     /* ---- 8.2 Validasi metadata ---- */
-    const nim           = ambilField(req.body, 'nim', 'NIM', 'nim_mahasiswa', 'nimMahasiswa');
-    const nama          = ambilField(req.body, 'nama', 'nama_mahasiswa', 'namaMahasiswa', 'nama_mhs');
+    // Metadata yang tidak dikirim frontend diambil dari akun yang sedang login
+    // (upload.html hanya mengirim judul, jenis_dokumen, dan berkas).
+    const akun          = req.pengguna || {};
+    const nim           = ambilField(req.body, 'nim', 'NIM', 'nim_mahasiswa', 'nimMahasiswa')
+      || String(akun.nim || '').trim();
+    const nama          = ambilField(req.body, 'nama', 'nama_mahasiswa', 'namaMahasiswa', 'nama_mhs')
+      || String(akun.nama || '').trim();
     const judul         = ambilField(req.body, 'judul', 'judul_dokumen', 'judulDokumen', 'title');
     const jenisMasukan  = ambilField(req.body, 'jenis_dokumen', 'jenisDokumen', 'jenis', 'jenisKode', 'type');
 
@@ -1638,6 +1890,8 @@ async function tanganiUnggah(req, res, next) {
         durasi_ms: info.durasi_ms,
         jumlah_kata_terkirim: info.jumlah_kata_terkirim,
         teks_dipotong: info.teks_dipotong,
+        bagian: info.bagian === undefined ? 1 : info.bagian,
+        koreksi: info.koreksi === true,
         token: info.token,
         peringatan: info.peringatan,
       },
@@ -1688,13 +1942,22 @@ const terimaBerkas = (req, res, next) => {
   });
 };
 
-router.post('/upload', terimaBerkas, tanganiUnggah);
-router.post('/documents', terimaBerkas, tanganiUnggah);          // alias dipakai di upload.html
-router.post('/documents/analyze', terimaBerkas, tanganiUnggah);  // alias "analyze" (lihat upload.html)
+// wajibLogin dipasang SEBELUM multer supaya permintaan tanpa token tidak
+// sempat menulis berkas ke folder unggahan. Akibatnya setiap analisis tercatat
+// atas nama pemilik token (document_metadata.user_id), dan riwayat mahasiswa
+// pada GET /api/history benar-benar terisi.
+router.post('/upload', wajibLogin, terimaBerkas, tanganiUnggah);
+router.post('/documents', wajibLogin, terimaBerkas, tanganiUnggah);          // alias dipakai di upload.html
+router.post('/documents/analyze', wajibLogin, terimaBerkas, tanganiUnggah);  // alias "analyze" (lihat upload.html)
 
 /* ---------------------- GET /api/history & /api/results ------------------ */
-/** Filter & paging sederhana untuk daftar riwayat. */
-function daftarRiwayat(query) {
+/**
+ * Filter & paging sederhana untuk daftar riwayat.
+ * @param {object} query query string permintaan
+ * @param {object|null} pengguna akun yang login; bila bukan Administrator,
+ *   hasil dibatasi pada rekaman miliknya sendiri.
+ */
+function daftarRiwayat(query, pengguna) {
   const nim        = ambilField(query, 'nim');
   const klasifikasi = ambilField(query, 'classification_level', 'klasifikasi');
   const kataKunci  = ambilField(query, 'q').toLowerCase();
@@ -1704,6 +1967,13 @@ function daftarRiwayat(query) {
   const offset     = Math.max(parseInt(query.offset, 10) || 0, 0);
 
   let data = dbHasilAnalisis.slice();
+
+  // Isolasi data: pengguna biasa hanya melihat rekaman miliknya sendiri,
+  // Administrator melihat semuanya (panel Admin punya rute /api/admin/*).
+  if (pengguna && pengguna.peran !== PERAN_ADMIN) {
+    const pemilik = pengguna.id;
+    data = data.filter((r) => r.document_metadata && r.document_metadata.user_id === pemilik);
+  }
 
   if (nim) {
     data = data.filter((r) => r.document_metadata && r.document_metadata.nim === nim);
@@ -1770,8 +2040,16 @@ router.get('/history', wajibLogin, (req, res) => {
   });
 });
 
-router.get('/results', (req, res) => {
-  const { total, limit, offset, data } = daftarRiwayat(req.query);
+/** true bila akun berhak membaca/menghapus rekaman ini. */
+function bolehAksesRekaman(pengguna, rekaman) {
+  if (!pengguna || !rekaman) return false;
+  if (pengguna.peran === PERAN_ADMIN) return true;
+  const pemilik = rekaman.document_metadata && rekaman.document_metadata.user_id;
+  return Boolean(pemilik) && pemilik === pengguna.id;
+}
+
+router.get('/results', wajibLogin, (req, res) => {
+  const { total, limit, offset, data } = daftarRiwayat(req.query, req.pengguna);
   res.set('X-Total-Count', String(total));
   res.json({
     status: 'success',
@@ -1784,23 +2062,31 @@ router.get('/results', (req, res) => {
 });
 
 /* --------------------------- GET /api/results/:id ------------------------ */
-router.get('/results/:id', (req, res, next) => {
+router.get('/results/:id', wajibLogin, (req, res, next) => {
   const id = String(req.params.id || '').trim();
   const rekaman = dbHasilAnalisis.find((r) => r.id.toLowerCase() === id.toLowerCase());
 
   if (!rekaman) {
     return next(new AppError(404, `Hasil analisis dengan id "${id}" tidak ditemukan.`));
   }
+  if (!bolehAksesRekaman(req.pengguna, rekaman)) {
+    return next(new AppError(403,
+      'Akses ditolak: hasil analisis ini milik akun lain.', { id }));
+  }
   res.json(rekaman);
 });
 
 /* -------------------------- DELETE /api/results/:id --------------------- */
-router.delete('/results/:id', (req, res, next) => {
+router.delete('/results/:id', wajibLogin, (req, res, next) => {
   const id = String(req.params.id || '').trim();
   const indeks = dbHasilAnalisis.findIndex((r) => r.id.toLowerCase() === id.toLowerCase());
 
   if (indeks === -1) {
     return next(new AppError(404, `Hasil analisis dengan id "${id}" tidak ditemukan.`));
+  }
+  if (!bolehAksesRekaman(req.pengguna, dbHasilAnalisis[indeks])) {
+    return next(new AppError(403,
+      'Akses ditolak: hasil analisis ini milik akun lain.', { id }));
   }
 
   const [dihapus] = dbHasilAnalisis.splice(indeks, 1);

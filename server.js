@@ -991,6 +991,10 @@ async function panggilApiOpenAI(prompt, pakaiJsonMode, signal) {
     ],
     temperature: k.suhu,
     max_tokens: k.maxToken,
+    // Wajib eksplisit: sebagian penyedia kompatibel OpenAI (mis. gateway lokal)
+    // memakai streaming sebagai bawaan, padahal balasan di sini dibaca sebagai
+    // satu objek JSON utuh.
+    stream: false,
   };
   if (pakaiJsonMode) muatan.response_format = { type: 'json_object' }; // JSON mode
 

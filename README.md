@@ -56,7 +56,7 @@ API dengan **JSON mode / structured output**.
 │  └─ js/ippl-api.js      # Client API
 ├─ data/                  # Runtime: users.json, ai-config.json, uploads/, hasil-analisis.json
 ├─ docs/                  # SRS/SDD proyek
-├─ tests/                 # Skrip uji manual
+├─ tests/                 # uji smoke otomatis (uji-smoke.js)
 └─ logs/                  # Log pengujian
 ```
 
@@ -119,7 +119,13 @@ Ollama lokal : http://localhost:11434/v1   (LLM_API_KEY boleh diisi "ollama")
 ```powershell
 npm start        # produksi
 npm run dev      # mode watch (auto-restart)
+npm test         # uji smoke end-to-end (server + folder data sementara)
 ```
+
+`npm test` menjalankan `tests/uji-smoke.js`: server dijalankan pada port acak
+dengan `DATA_DIR` sementara dan `LLM_FALLBACK_SIMULASI=true`, lalu alur
+pendaftaran, unggah, pemeriksaan, riwayat, isolasi data antarpengguna, panel
+Admin, dan logout (pencabutan token) diperiksa otomatis.
 
 Alamat setelah server jalan:
 
@@ -135,15 +141,19 @@ Alamat setelah server jalan:
 | Method | Rute | Keterangan |
 | --- | --- | --- |
 | GET | `/api/health` | Status layanan. |
-| POST | `/api/upload` | Unggah berkas (FormData: `judul`, `nim`, `jenis`, `file`), ekstraksi, analisis LLM. |
-| POST | `/api/documents` | Alias `/api/upload`. |
-| POST | `/api/documents/analyze` | Alias `/api/upload`. |
+| POST | `/api/upload` | Unggah berkas (FormData: `judul`, `nim`, `jenis`, `file`), ekstraksi, analisis LLM dalam satu permintaan (jalur kompatibilitas). |
+| POST | `/api/documents` | Unggah + ekstraksi saja; rekaman dibuat dengan status `menunggu` (FR-04). |
+| GET | `/api/documents/:id` | Informasi dokumen (metadata, berkas, ringkasan teks) + status pemeriksaan. |
+| POST | `/api/documents/:id/analyze` | Mulai analisis asinkron → `202 Accepted`, status `diproses` (FR-11). |
+| POST | `/api/documents/analyze` | Alias lama `/api/upload`. |
 | GET | `/api/results` | Daftar hasil analisis. |
 | GET | `/api/results/:id` | Detail satu hasil. |
+| GET | `/api/results/:id/status` | Polling status pemeriksaan (`menunggu`/`diproses`/`berhasil`/`gagal`). |
 | DELETE | `/api/results/:id` | Hapus satu hasil. |
 | GET | `/api/history` | Riwayat (filter `nim`, `klasifikasi`, paging; perlu login). |
 | POST | `/api/auth/register` | Daftar akun mahasiswa (UC-01). |
 | POST | `/api/auth/login` | Masuk mahasiswa & admin (UC-02) → token sesi. |
+| POST | `/api/auth/logout` | Akhiri sesi & cabut token di server (UC-08, UC-14). |
 | GET | `/api/admin/users` | Daftar pengguna (UC-09) [admin]. |
 | GET | `/api/admin/documents` | Seluruh dokumen diunggah (UC-10) [admin]. |
 | GET | `/api/admin/histories` | Seluruh riwayat (UC-11) [admin]. |
@@ -160,6 +170,25 @@ berperan Administrator.
   ekstraksi — konversi ke PDF/DOCX).
 - Minimal 10 kata berhasil diekstraksi (berkas hasil pemindaian/gambar ditolak).
 - Batas ukuran berkas sesuai konfigurasi (bawaan 10 MB, maksimum panel 50 MB).
+
+### Alur pemeriksaan & status (FR-04, FR-11)
+
+Pemeriksaan berjalan dua tahap supaya pengguna dapat melihat informasi dokumen
+sebelum analisis AI dimulai:
+
+1. `POST /api/documents` — berkas disimpan, teks diekstraksi, rekaman dibuat
+   dengan `status_pemeriksaan = "menunggu"`. Balasan memuat metadata dokumen,
+   info berkas, dan ringkasan teks (`teks_dokumen`).
+2. `POST /api/documents/:id/analyze` — analisis dimulai di latar belakang dan
+   langsung dibalas `202 Accepted` dengan status `"diproses"`.
+3. `GET /api/results/:id/status` — dipantau sampai `"berhasil"` atau `"gagal"`.
+   Kegagalan LLM disimpan sebagai `"gagal"` beserta `pesan_status`; rekaman
+   berstatus gagal boleh diperiksa ulang lewat rute `analyze` yang sama
+   (rekaman `"berhasil"` dibalas `409 Conflict`).
+
+Riwayat (`GET /api/history`, `GET /api/results`) hanya memuat rekaman yang sudah
+selesai (`berhasil`/`gagal`). Tambahkan `?status_pemeriksaan=menunggu` untuk
+menampilkan rekaman yang masih diproses.
 
 ### Klasifikasi
 

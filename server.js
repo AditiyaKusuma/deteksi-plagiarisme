@@ -2,7 +2,7 @@
 
 /* ============================================================================
  *  Aplikasi Deteksi Plagiarisme Proposal & Laporan Tugas Akhir Menggunakan AI
- *  Backend REST API — Progress 30% (Mock Data / Simulasi Respon LLM)
+ *  Backend REST API — Progress 50% (Analisis LLM nyata + status pemeriksaan)
  *
  *  File    : server.js
  *  Jalan   : npm install  &&  npm start
@@ -17,15 +17,19 @@
  *
  *  ENDPOINT
  *    GET    /api/health                  -> status layanan
- *    POST   /api/upload                  -> unggah berkas, ekstraksi teks, analisis LLM (JSON mode)
- *    POST   /api/documents               -> alias /api/upload (FormData: judul, nim, jenis, file)
- *    POST   /api/documents/analyze       -> alias /api/upload
+ *    POST   /api/upload                  -> unggah + ekstraksi + analisis LLM (satu permintaan, kompatibilitas)
+ *    POST   /api/documents               -> unggah + ekstraksi saja (status "menunggu") [FR-04]
+ *    GET    /api/documents/:id           -> informasi dokumen + status pemeriksaan
+ *    POST   /api/documents/:id/analyze   -> mulai analisis asinkron (202 Accepted) [FR-11]
+ *    POST   /api/documents/analyze       -> alias lama /api/upload
  *    GET    /api/results                 -> daftar hasil analisis (lihat juga /api/history)
  *    GET    /api/results/:id             -> detail satu hasil analisis
- *    GET    /api/history                 -> riwayat pemeriksaan (+ filter nim, klasifikasi, paging)
+ *    GET    /api/results/:id/status      -> polling status pemeriksaan [FR-11]
+ *    GET    /api/history                 -> riwayat pemeriksaan (+ filter nim, klasifikasi, status, paging)
  *    DELETE /api/results/:id             -> hapus satu hasil analisis
  *    POST   /api/auth/register           -> pendaftaran akun mahasiswa (UC-01)
  *    POST   /api/auth/login              -> autentikasi mahasiswa & admin (UC-02) -> token sesi
+ *    POST   /api/auth/logout             -> akhiri sesi & cabut token (UC-08, UC-14)
  *    GET    /api/admin/users             -> daftar pengguna terdaftar (UC-09)   [admin]
  *    GET    /api/admin/documents         -> seluruh dokumen yang diunggah (UC-10) [admin]
  *    GET    /api/admin/histories         -> seluruh riwayat pemeriksaan (UC-11)  [admin]
@@ -44,9 +48,16 @@
  *    dengan JSON mode / structured output (prompt engineering pada bagian 5).
  *    Panggilan LLM dibatasi maksimal 30 detik, dan teks yang dikirim maksimal
  *    8.000 kata pertama. Bila panggilan gagal (error API, timeout, atau JSON
- *    tidak sah), server membalas HTTP 500 dengan pesan yang rapi tanpa membuat
+ *    tidak sah), rekaman diberi status "gagal" beserta pesannya tanpa membuat
  *    proses Node.js berhenti. Khusus demo tanpa kunci API,
- *    LLM_FALLBACK_SIMULASI=true mengaktifkan data mock progress 30%.
+ *    LLM_FALLBACK_SIMULASI=true mengaktifkan data mock bawaan.
+ *
+ *    Sejak progres 50%: alur pemeriksaan dipisah menjadi dua tahap
+ *    (POST /api/documents -> POST /api/documents/:id/analyze) dan setiap
+ *    rekaman memiliki status_pemeriksaan: menunggu | diproses | berhasil |
+ *    gagal, sehingga FR-04, FR-11, dan FR-16 terpenuhi. Logout (UC-08/UC-14)
+ *    mencabut token di sisi server (data/sesi-dicabut.json), bukan hanya
+ *    menghapusnya di browser.
  * ========================================================================== */
 
 const express = require('express');
@@ -55,6 +66,9 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+
+// Basis data SQLite (node:sqlite) — lihat db.js
+const basisData = require('./db');
 
 // Pustaka ekstraksi teks dokumen (lihat bagian 4)
 const { PDFParse } = require('pdf-parse');   // PDF  -> PDFParse#getText()
@@ -75,9 +89,13 @@ const ROOT_DIR       = __dirname;
 const UI_DIR         = path.join(ROOT_DIR, 'public');   // berkas frontend (HTML) — lihat bagian 9
 const DATA_DIR       = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT_DIR, 'data');
 const UPLOAD_DIR     = path.join(DATA_DIR, 'uploads');
-const DB_FILE        = path.join(DATA_DIR, 'hasil-analisis.json');
-const USERS_FILE     = path.join(DATA_DIR, 'users.json');        // akun mahasiswa & admin (bagian 2B.1)
-const AI_CONFIG_FILE = path.join(DATA_DIR, 'ai-config.json');    // konfigurasi penyedia AI (bagian 2B.2)
+
+// ---- Basis data (SQLite) + berkas JSON lama sebagai sumber migrasi --------
+const DB_SQLITE      = path.join(DATA_DIR, 'ippl.db');           // basis data utama
+const DB_FILE        = path.join(DATA_DIR, 'hasil-analisis.json'); // lama (sumber migrasi)
+const USERS_FILE     = path.join(DATA_DIR, 'users.json');        // lama (sumber migrasi)
+const AI_CONFIG_FILE = path.join(DATA_DIR, 'ai-config.json');    // lama (sumber migrasi)
+const SESI_DICABUT_FILE = path.join(DATA_DIR, 'sesi-dicabut.json'); // daftar logout
 
 // Batas ukuran berkas unggahan.
 //   MAX_FILE_SIZE  : plafon keras middleware multer. Sengaja tidak dapat diubah
@@ -147,18 +165,61 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 /** Penyimpanan di memori (array) — sumber data utama saat server berjalan. */
 let dbHasilAnalisis = [];
 
-/** Memuat riwayat dari berkas JSON saat server dijalankan. */
+/**
+ * Status pemeriksaan dokumen (FR-11): menunggu -> diproses -> berhasil | gagal.
+ * Rekaman lama yang belum punya status_pemeriksaan dianggap sudah "berhasil".
+ */
+const STATUS_PEMERIKSAAN = {
+  MENUNGGU: 'menunggu',
+  DIPROSES: 'diproses',
+  BERHASIL: 'berhasil',
+  GAGAL: 'gagal',
+};
+
+/** Seluruh nilai status yang sah. */
+const SEMUA_STATUS_PEMERIKSAAN = Object.keys(STATUS_PEMERIKSAAN)
+  .map((kunci) => STATUS_PEMERIKSAAN[kunci]);
+
+/** Status efektif sebuah rekaman (rekaman lama -> "berhasil"). */
+function statusRekaman(rekaman) {
+  const nilai = String((rekaman && rekaman.status_pemeriksaan) || '').toLowerCase();
+  return SEMUA_STATUS_PEMERIKSAAN.indexOf(nilai) === -1
+    ? STATUS_PEMERIKSAAN.BERHASIL
+    : nilai;
+}
+
+/** Mencari rekaman berdasarkan id (tidak peka huruf besar/kecil). */
+function cariRekaman(id) {
+  const kunci = String(id || '').trim().toLowerCase();
+  if (!kunci) return null;
+  return dbHasilAnalisis.find(
+    (r) => String((r && r.id) || '').toLowerCase() === kunci) || null;
+}
+
+/** Menyimpan riwayat hanya bila panel Admin mengizinkan (simpanRiwayat). */
+function simpanRiwayatJikaAktif() {
+  return konfigLlm().simpanRiwayat ? simpanRiwayat() : true;
+}
+
+/** Memuat riwayat dari basis data SQLite saat server dijalankan. */
 function muatRiwayat() {
-  const parsed = muatJsonBerkas(DB_FILE, []);
-  dbHasilAnalisis = Array.isArray(parsed) ? parsed : [];
+  dbHasilAnalisis = basisData.muatRekaman();
+  // Rekaman lama belum punya status_pemeriksaan -> tandai sudah berhasil.
+  dbHasilAnalisis.forEach((rekaman) => {
+    if (!rekaman || typeof rekaman !== 'object') return;
+    if (!rekaman.status_pemeriksaan) {
+      rekaman.status_pemeriksaan = STATUS_PEMERIKSAAN.BERHASIL;
+    }
+  });
   if (dbHasilAnalisis.length) {
-    console.log(`[db] ${dbHasilAnalisis.length} hasil analisis dimuat dari ${path.relative(ROOT_DIR, DB_FILE)}`);
+    console.log(`[db] ${dbHasilAnalisis.length} rekaman dimuat dari `
+      + `${path.relative(ROOT_DIR, DB_SQLITE)} (tabel dokumen + hasil_analisis)`);
   }
 }
 
-/** Menyimpan riwayat ke berkas JSON secara aman (tulis sementara lalu rename). */
+/** Menyimpan riwayat ke basis data (upsert seluruh rekaman di memori). */
 function simpanRiwayat() {
-  return simpanJsonBerkas(DB_FILE, dbHasilAnalisis);
+  return basisData.simpanRekaman(dbHasilAnalisis);
 }
 
 /* ==========================================================================
@@ -292,24 +353,25 @@ function penggunaBawaan() {
   ];
 }
 
-/** Memuat data pengguna; membuat berkas + akun contoh saat pertama kali jalan. */
+/** Memuat data pengguna; membuat akun contoh saat basis data masih kosong. */
 function muatPengguna() {
-  if (!fs.existsSync(USERS_FILE)) {
+  dbPengguna = basisData.muatPengguna();
+
+  if (!dbPengguna.length) {
     dbPengguna = penggunaBawaan();
     simpanPengguna();
-    console.log(`[db] ${path.relative(ROOT_DIR, USERS_FILE)} dibuat dengan `
-      + `${dbPengguna.length} akun contoh (1 Mahasiswa, 1 Administrator).`);
+    console.log(`[db] tabel pengguna kosong -> ${dbPengguna.length} akun contoh dibuat `
+      + '(1 Mahasiswa, 1 Administrator).');
     return;
   }
 
-  const parsed = muatJsonBerkas(USERS_FILE, []);
-  dbPengguna = Array.isArray(parsed) ? parsed : [];
-  console.log(`[db] ${dbPengguna.length} pengguna dimuat dari ${path.relative(ROOT_DIR, USERS_FILE)}`);
+  console.log(`[db] ${dbPengguna.length} pengguna dimuat dari `
+    + `${path.relative(ROOT_DIR, DB_SQLITE)} (tabel pengguna)`);
 }
 
-/** Menyimpan data pengguna ke berkas JSON. */
+/** Menyimpan data pengguna ke basis data. */
 function simpanPengguna() {
-  return simpanJsonBerkas(USERS_FILE, dbPengguna);
+  return basisData.simpanPengguna(dbPengguna);
 }
 
 /** Mencari pengguna berdasarkan email (tanpa membedakan huruf besar/kecil). */
@@ -349,18 +411,18 @@ function konfigAiBawaan() {
 /** Konfigurasi AI aktif di memori. */
 let konfigAi = konfigAiBawaan();
 
-/** Memuat konfigurasi AI dari data/ai-config.json (bila sudah pernah disimpan). */
+/** Memuat konfigurasi AI dari basis data (bila sudah pernah disimpan). */
 function muatKonfigAi() {
-  const tersimpan = muatJsonBerkas(AI_CONFIG_FILE, null);
+  const tersimpan = basisData.muatKonfigAi();
   konfigAi = tersimpan && typeof tersimpan === 'object' && !Array.isArray(tersimpan)
     ? { ...konfigAiBawaan(), ...tersimpan }
     : konfigAiBawaan();
   return konfigAi;
 }
 
-/** Menyimpan konfigurasi AI ke berkas JSON. */
+/** Menyimpan konfigurasi AI ke basis data. */
 function simpanKonfigAi() {
-  return simpanJsonBerkas(AI_CONFIG_FILE, konfigAi);
+  return basisData.simpanKonfigAi(konfigAi);
 }
 
 /** Menyamarkan kunci API: hanya 4 karakter terakhir yang terlihat. */
@@ -655,7 +717,7 @@ function kunciLonggar(teks) {
 
 /** true bila panel Admin pernah menyimpan konfigurasi ke data/ai-config.json. */
 function panelAiTersimpan() {
-  return fs.existsSync(AI_CONFIG_FILE);
+  return basisData.adaKonfigAi();
 }
 
 /**
@@ -1441,13 +1503,13 @@ const CONTOH_KUTIPAN = {
 };
 
 /**
- * FALLBACK: balasan JSON tiruan (data mock progress 30%).
+ * FALLBACK: balasan JSON tiruan (data mock bawaan).
  * Dipakai HANYA bila LLM_FALLBACK_SIMULASI=true, yaitu untuk demo tanpa kunci
  * API. Pada pengaturan bawaan (false), kegagalan LLM dibalas HTTP 500.
  * @returns {object} hasil analisis inti (metadata ditambahkan analisisDokumen)
  */
 function simulasikanAnalisis() {
-  const skor = 28; // skor simulasi tetap sesuai spesifikasi progress 30%
+  const skor = 28; // skor simulasi tetap sesuai spesifikasi awal
 
   return {
     status: 'success',
@@ -1473,7 +1535,7 @@ function simulasikanAnalisis() {
 function infoFallback(peringatan) {
   return {
     mode: 'simulasi-fallback',
-    label: 'simulasi-llm-v1 (fallback, mock data progress 30%)',
+    label: 'simulasi-llm-v1 (fallback, mock data bawaan)',
     model: null,
     endpoint_host: null,
     json_mode: null,
@@ -1668,6 +1730,8 @@ function buatTokenSesi(user) {
     nama: user.nama,
     email: user.email,
     peran: user.peran,
+    // jti = id sesi; dipakai untuk mencabut token saat logout (UC-08/UC-14).
+    jti: crypto.randomBytes(9).toString('hex'),
     iat: sekarang,
     exp: sekarang + AUTH_TTL_MS,
   };
@@ -1698,10 +1762,79 @@ function bacaTokenSesi(token) {
     const payload = JSON.parse(dariBase64Url(bagian[0]).toString('utf8'));
     if (!payload || typeof payload !== 'object') return null;
     if (!Number(payload.exp) || Number(payload.exp) < Date.now()) return null;
+    if (sesiSudahDicabut(payload)) return null;   // sudah logout (UC-08/UC-14)
     return payload;
   } catch (err) {
     return null;
   }
+}
+
+/* ---- 7.2 Daftar sesi yang dicabut (logout) ------------------------------ */
+/**
+ * Token sesi bersifat stateless (HMAC), sehingga logout tidak cukup hanya
+ * dengan menghapus token di browser: token lama masih sah sampai `exp`.
+ * Setiap token membawa `jti`; pemanggilan POST /api/auth/logout mencatat
+ * `jti` tersebut ke data/sesi-dicabut.json agar token itu langsung ditolak.
+ * Entri kedaluwarsa dibersihkan otomatis saat berkas ditulis ulang.
+ */
+const sesiDicabut = new Map();   // jti -> waktu kedaluwarsa (ms)
+
+/** Memuat kembali daftar sesi dicabut dari berkas (dipanggil saat start). */
+function muatSesiDicabut() {
+  sesiDicabut.clear();
+  if (!fs.existsSync(SESI_DICABUT_FILE)) return;
+
+  try {
+    const isi = JSON.parse(fs.readFileSync(SESI_DICABUT_FILE, 'utf8'));
+    const sekarang = Date.now();
+    (Array.isArray(isi) ? isi : []).forEach((item) => {
+      const jti = String((item && item.jti) || '').trim();
+      const exp = Number(item && item.exp) || 0;
+      if (jti && exp > sekarang) sesiDicabut.set(jti, exp);
+    });
+  } catch (err) {
+    console.warn(`[auth] daftar sesi dicabut tidak terbaca: ${err.message}`);
+  }
+}
+
+/** Menyimpan daftar sesi dicabut (hanya entri yang belum kedaluwarsa). */
+function simpanSesiDicabut() {
+  const sekarang = Date.now();
+  const isi = [];
+  sesiDicabut.forEach((exp, jti) => {
+    if (exp > sekarang) isi.push({ jti, exp });
+    else sesiDicabut.delete(jti);
+  });
+
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SESI_DICABUT_FILE, JSON.stringify(isi, null, 2), 'utf8');
+  } catch (err) {
+    console.warn(`[auth] daftar sesi dicabut gagal disimpan: ${err.message}`);
+  }
+}
+
+/** Mencabut satu sesi (dipanggil oleh POST /api/auth/logout). */
+function cabutSesi(payload) {
+  const jti = String((payload && payload.jti) || '').trim();
+  if (!jti) return false;
+  sesiDicabut.set(jti, Number(payload.exp) || (Date.now() + AUTH_TTL_MS));
+  simpanSesiDicabut();
+  return true;
+}
+
+/** True bila `jti` token ini sudah dicabut dan belum kedaluwarsa. */
+function sesiSudahDicabut(payload) {
+  const jti = String((payload && payload.jti) || '').trim();
+  if (!jti) return false;
+
+  const exp = sesiDicabut.get(jti);
+  if (!exp) return false;
+  if (exp < Date.now()) {
+    sesiDicabut.delete(jti);
+    return false;
+  }
+  return true;
 }
 
 /** Mengambil token dari header "Authorization: Bearer <token>". */
@@ -1756,7 +1889,8 @@ router.get('/health', (req, res) => {
     status: 'success',
     service: 'deteksi-plagiarisme-api',
     version: '0.6.0',
-    progress: llmSiap() ? '50% (analisis LLM nyata)' : '30% (LLM belum dikonfigurasi)',
+    progress: '50% (alur bertahap + status pemeriksaan)',
+    llm_siap: llmSiap(),
     analysis_engine: llmSiap()
       ? `llm-${k.penyedia}-v1 (${k.model})`
       : 'simulasi-llm-v1 (fallback)',
@@ -1778,10 +1912,16 @@ router.get('/health', (req, res) => {
       min_kata: MIN_KATA_TEREKSTRAKSI,
     },
     total_hasil: dbHasilAnalisis.length,
+    // Sebaran status pemeriksaan (FR-11) untuk halaman Beranda/panel Admin.
+    status_pemeriksaan: dbHasilAnalisis.reduce((hitung, rekaman) => {
+      const kunci = statusRekaman(rekaman);
+      hitung[kunci] = (hitung[kunci] || 0) + 1;
+      return hitung;
+    }, {}),
     total_pengguna: dbPengguna.length,
     maks_ukuran_mb: k.maksUkuranMb,
     ai_config: {
-      tersimpan: fs.existsSync(AI_CONFIG_FILE),
+      tersimpan: basisData.adaKonfigAi(),
       aktif: k.aktif,
       penyedia: k.penyedia,
       model: k.model,
@@ -1798,77 +1938,146 @@ router.get('/health', (req, res) => {
 
 /* ------------------------- POST /api/upload ------------------------------ */
 /**
- * Menerima berkas (PDF/DOC/DOCX) dan metadata:
- *   nim, nama, judul, jenis_dokumen  (alias: jenis / jenisKode / judul_dokumen)
- * Field berkas: "file" (alias: dokumen, berkas).
- *
- * Alur: validasi berkas -> validasi metadata -> EKSTRAKSI TEKS (bagian 4)
- *       -> kirim teks ke LLM dengan JSON mode (bagian 5) -> simpan hasilnya.
+ * Keterangan mesin analisis (tanpa kunci API) untuk keperluan audit rekaman.
+ * @param {object} info hasil analisisDokumen().info
  */
-async function tanganiUnggah(req, res, next) {
+function keteranganLlm(info) {
+  return {
+    mode: info.mode,
+    model: info.model,
+    endpoint_host: info.endpoint_host,
+    json_mode: info.json_mode,
+    percobaan: info.percobaan,
+    durasi_ms: info.durasi_ms,
+    jumlah_kata_terkirim: info.jumlah_kata_terkirim,
+    teks_dipotong: info.teks_dipotong,
+    bagian: info.bagian === undefined ? 1 : info.bagian,
+    koreksi: info.koreksi === true,
+    token: info.token,
+    peringatan: info.peringatan,
+  };
+}
+
+/** Ringkasan berkas unggahan yang disimpan pada rekaman. */
+function infoBerkas(berkas) {
+  return {
+    nama_asli: berkas.originalname,
+    nama_tersimpan: berkas.filename,
+    ekstensi: path.extname(berkas.originalname).toLowerCase(),
+    mime_type: berkas.mimetype,
+    ukuran_byte: berkas.size,
+    ukuran: ukuranTerbaca(berkas.size),
+  };
+}
+
+/**
+ * Validasi berkas + metadata lalu mengekstraksi teks dokumen.
+ *
+ * Dipakai bersama oleh dua alur:
+ *   - POST /api/upload      -> langsung analisis (satu permintaan)
+ *   - POST /api/documents   -> simpan dulu, analisis terpisah (FR-04/FR-11)
+ *
+ * @returns {Promise<{berkas:object, meta:object, ekstraksi:object}>}
+ * @throws {AppError} 400 bila berkas/metadata tidak memenuhi ketentuan
+ */
+async function siapkanDokumen(req) {
   const berkas = (req.files && req.files[0]) || null;
 
-  try {
-    /* ---- 8.1 Validasi berkas ---- */
-    if (!berkas) {
-      throw new AppError(400,
-        'Berkas dokumen wajib diunggah pada field "file" (multipart/form-data).');
-    }
-    if (!berkas.size) {
-      throw new AppError(400, 'Berkas kosong atau tidak dapat dibaca.');
-    }
-    // Batas ukuran mengikuti panel Admin "Pengaturan AI" (field maksUkuran).
-    const batasMb = konfigLlm().maksUkuranMb;
-    if (berkas.size > batasMb * 1024 * 1024) {
-      throw new AppError(400,
-        `Ukuran berkas ${ukuranTerbaca(berkas.size)} melebihi batas ${batasMb} MB `
-        + 'yang ditetapkan pada panel Pengaturan AI.',
-        { maks_ukuran_mb: batasMb, ukuran_byte: berkas.size });
-    }
-    // Word 97-2003 (.doc) bukan format ZIP/OOXML sehingga mammoth tidak bisa
-    // membacanya. Ditolak di sini agar pesannya jelas dan kuota LLM tidak terpakai.
-    if (path.extname(berkas.originalname).toLowerCase() === '.doc') {
-      throw new AppError(400,
-        'Format Word 97-2003 (.doc) belum didukung. Buka berkas di Word lalu '
-        + '"Save As" ke .docx (atau ekspor ke PDF), kemudian unggah kembali.',
-        { format: '.doc', didukung: ['pdf', 'docx'] });
-    }
+  /* ---- 8.1 Validasi berkas ---- */
+  if (!berkas) {
+    throw new AppError(400,
+      'Berkas dokumen wajib diunggah pada field "file" (multipart/form-data).');
+  }
+  if (!berkas.size) {
+    throw new AppError(400, 'Berkas kosong atau tidak dapat dibaca.');
+  }
+  // Batas ukuran mengikuti panel Admin "Pengaturan AI" (field maksUkuran).
+  const batasMb = konfigLlm().maksUkuranMb;
+  if (berkas.size > batasMb * 1024 * 1024) {
+    throw new AppError(400,
+      `Ukuran berkas ${ukuranTerbaca(berkas.size)} melebihi batas ${batasMb} MB `
+      + 'yang ditetapkan pada panel Pengaturan AI.',
+      { maks_ukuran_mb: batasMb, ukuran_byte: berkas.size });
+  }
+  // Word 97-2003 (.doc) bukan format ZIP/OOXML sehingga mammoth tidak bisa
+  // membacanya. Ditolak di sini agar pesannya jelas dan kuota LLM tidak terpakai.
+  if (path.extname(berkas.originalname).toLowerCase() === '.doc') {
+    throw new AppError(400,
+      'Format Word 97-2003 (.doc) belum didukung. Buka berkas di Word lalu '
+      + '"Save As" ke .docx (atau ekspor ke PDF), kemudian unggah kembali.',
+      { format: '.doc', didukung: ['pdf', 'docx'] });
+  }
 
-    /* ---- 8.2 Validasi metadata ---- */
-    // Metadata yang tidak dikirim frontend diambil dari akun yang sedang login
-    // (upload.html hanya mengirim judul, jenis_dokumen, dan berkas).
-    const akun          = req.pengguna || {};
-    const nim           = ambilField(req.body, 'nim', 'NIM', 'nim_mahasiswa', 'nimMahasiswa')
-      || String(akun.nim || '').trim();
-    const nama          = ambilField(req.body, 'nama', 'nama_mahasiswa', 'namaMahasiswa', 'nama_mhs')
-      || String(akun.nama || '').trim();
-    const judul         = ambilField(req.body, 'judul', 'judul_dokumen', 'judulDokumen', 'title');
-    const jenisMasukan  = ambilField(req.body, 'jenis_dokumen', 'jenisDokumen', 'jenis', 'jenisKode', 'type');
+  /* ---- 8.2 Validasi metadata ---- */
+  // Metadata yang tidak dikirim frontend diambil dari akun yang sedang login
+  // (upload.html hanya mengirim judul, jenis_dokumen, dan berkas).
+  const akun          = req.pengguna || {};
+  const nim           = ambilField(req.body, 'nim', 'NIM', 'nim_mahasiswa', 'nimMahasiswa')
+    || String(akun.nim || '').trim();
+  const nama          = ambilField(req.body, 'nama', 'nama_mahasiswa', 'namaMahasiswa', 'nama_mhs')
+    || String(akun.nama || '').trim();
+  const judul         = ambilField(req.body, 'judul', 'judul_dokumen', 'judulDokumen', 'title');
+  const jenisMasukan  = ambilField(req.body, 'jenis_dokumen', 'jenisDokumen', 'jenis', 'jenisKode', 'type');
 
-    if (nim && !/^[0-9]{8,12}$/.test(nim)) {
-      throw new AppError(400, 'Metadata "nim" harus berupa angka 8-12 digit.', { nim });
-    }
-    if (!judul) throw new AppError(400, 'Metadata "judul" wajib diisi.');
-    if (judul.length < 5) {
-      throw new AppError(400, 'Metadata "judul" minimal 5 karakter.', { judul });
-    }
+  if (nim && !/^[0-9]{8,12}$/.test(nim)) {
+    throw new AppError(400, 'Metadata "nim" harus berupa angka 8-12 digit.', { nim });
+  }
+  if (!judul) throw new AppError(400, 'Metadata "judul" wajib diisi.');
+  if (judul.length < 5) {
+    throw new AppError(400, 'Metadata "judul" minimal 5 karakter.', { judul });
+  }
 
-    const jenisDokumen = normalisasiJenisDokumen(jenisMasukan);
+  const jenisDokumen = normalisasiJenisDokumen(jenisMasukan);
 
-    /* ---- 8.3 Ekstraksi teks dokumen (PDF: pdf-parse, DOCX: mammoth) ---- */
-    const ekstraksi = await ekstraksiTeksDokumen(berkas.path, berkas.mimetype, berkas.originalname);
-    console.log(`[ekstraksi] ${berkas.originalname}: format=${ekstraksi.format}, ` +
-      `${ekstraksi.kata} kata, ${ekstraksi.karakter} karakter` +
-      (ekstraksi.halaman ? `, ${ekstraksi.halaman} halaman` : ''));
+  /* ---- 8.3 Ekstraksi teks dokumen (PDF: pdf-parse, DOCX: mammoth) ---- */
+  const ekstraksi = await ekstraksiTeksDokumen(berkas.path, berkas.mimetype, berkas.originalname);
+  console.log(`[ekstraksi] ${berkas.originalname}: format=${ekstraksi.format}, ` +
+    `${ekstraksi.kata} kata, ${ekstraksi.karakter} karakter` +
+    (ekstraksi.halaman ? `, ${ekstraksi.halaman} halaman` : ''));
 
-    /* ---- 8.4 Kirim teks ke LLM, minta keluaran JSON terstruktur ---- */
-    const waktuProses = new Date();
-    const { analisis, info } = await analisisDokumen({
+  return {
+    berkas,
+    ekstraksi,
+    meta: {
       nim,
       nama: nama || 'Tidak disebutkan',
       judul,
       jenis_dokumen: jenisDokumen,
-    }, ekstraksi, req);
+    },
+  };
+}
+
+/**
+ * Rekaman awal dokumen yang sudah diunggah tetapi belum dianalisis (FR-04).
+ * @returns {object} rekaman dengan status_pemeriksaan = "menunggu"
+ */
+function bentukRekamanDasar(id, waktu, berkas, meta, ekstraksi, req) {
+  return {
+    ...lengkapiAnalisis({}, meta, ekstraksi, req),
+    id,
+    created_at: waktu.toISOString(),
+    status_pemeriksaan: STATUS_PEMERIKSAAN.MENUNGGU,
+    pesan_status: 'Dokumen tersimpan dan menunggu diperiksa.',
+    waktu_mulai: null,
+    waktu_selesai: null,
+    berkas: infoBerkas(berkas),
+  };
+}
+
+/**
+ * Alur lama (kompatibilitas): unggah berkas lalu langsung dianalisis dalam
+ * satu permintaan. Membalas 201 dengan rekaman lengkap.
+ */
+async function tanganiUnggah(req, res, next) {
+  let berkas = null;
+
+  try {
+    const siap = await siapkanDokumen(req);
+    berkas = siap.berkas;
+
+    /* ---- 8.4 Kirim teks ke LLM, minta keluaran JSON terstruktur ---- */
+    const waktuProses = new Date();
+    const { analisis, info } = await analisisDokumen(siap.meta, siap.ekstraksi, req);
 
     console.log(`[analisis] ${info.label} | skor ${analisis.overall_similarity_score}% `
       + `(${analisis.classification_level}) | ${analisis.flagged_passages.length} temuan `
@@ -1879,30 +2088,13 @@ async function tanganiUnggah(req, res, next) {
       ...analisis,
       id: buatIdHasil(waktuProses),
       created_at: waktuProses.toISOString(),
+      status_pemeriksaan: STATUS_PEMERIKSAAN.BERHASIL,
+      pesan_status: 'Analisis selesai.',
+      waktu_mulai: waktuProses.toISOString(),
+      waktu_selesai: new Date().toISOString(),
       analysis_engine: info.label,
-      // Keterangan mesin analisis (tanpa kunci API) untuk keperluan audit.
-      llm: {
-        mode: info.mode,
-        model: info.model,
-        endpoint_host: info.endpoint_host,
-        json_mode: info.json_mode,
-        percobaan: info.percobaan,
-        durasi_ms: info.durasi_ms,
-        jumlah_kata_terkirim: info.jumlah_kata_terkirim,
-        teks_dipotong: info.teks_dipotong,
-        bagian: info.bagian === undefined ? 1 : info.bagian,
-        koreksi: info.koreksi === true,
-        token: info.token,
-        peringatan: info.peringatan,
-      },
-      berkas: {
-        nama_asli: berkas.originalname,
-        nama_tersimpan: berkas.filename,
-        ekstensi: path.extname(berkas.originalname).toLowerCase(),
-        mime_type: berkas.mimetype,
-        ukuran_byte: berkas.size,
-        ukuran: ukuranTerbaca(berkas.size),
-      },
+      llm: keteranganLlm(info),
+      berkas: infoBerkas(berkas),
     };
 
     /* ---- 8.6 Panel Admin: tampilkan sumber & simpan riwayat ---- */
@@ -1928,10 +2120,132 @@ async function tanganiUnggah(req, res, next) {
 
     res.status(201).json(rekaman);
   } catch (err) {
-    hapusBerkas(berkas); // jangan tinggalkan berkas bila permintaan ditolak
+    hapusBerkas(berkas || (req.files && req.files[0])); // jangan tinggalkan berkas
     next(err);
   }
 }
+
+/**
+ * POST /api/documents — unggah + ekstraksi saja (FR-04).
+ *
+ * Rekaman disimpan dengan status "menunggu" tanpa memanggil LLM. Analisis
+ * dijalankan terpisah oleh POST /api/documents/:id/analyze sehingga pengguna
+ * dapat memeriksa informasi dokumen lebih dulu (UC-03 -> UC-04) dan proses AI
+ * berjalan asinkron dengan status yang dapat dipantau (FR-11).
+ */
+async function tanganiSimpanDokumen(req, res, next) {
+  let berkas = null;
+
+  try {
+    const siap = await siapkanDokumen(req);
+    berkas = siap.berkas;
+
+    const waktu = new Date();
+    const rekaman = bentukRekamanDasar(
+      buatIdHasil(waktu), waktu, siap.berkas, siap.meta, siap.ekstraksi, req);
+
+    dbHasilAnalisis.unshift(rekaman);
+    simpanRiwayatJikaAktif();
+
+    console.log(`[dokumen] ${rekaman.id} tersimpan | status ${rekaman.status_pemeriksaan} `
+      + `| ${rekaman.teks_dokumen.kata} kata`);
+
+    res.status(201).json({
+      status: 'success',
+      id: rekaman.id,
+      status_pemeriksaan: rekaman.status_pemeriksaan,
+      pesan_status: rekaman.pesan_status,
+      created_at: rekaman.created_at,
+      document_metadata: rekaman.document_metadata,
+      berkas: rekaman.berkas,
+      teks_dokumen: rekaman.teks_dokumen,
+    });
+  } catch (err) {
+    hapusBerkas(berkas || (req.files && req.files[0]));
+    next(err);
+  }
+}
+
+/** ID rekaman yang analisisnya sedang berjalan di latar belakang. */
+const analisisBerjalan = new Set();
+
+/**
+ * Menjalankan analisis LLM di latar belakang untuk satu rekaman.
+ *
+ * Kegagalan TIDAK dilempar ke pemanggil: status rekaman diubah menjadi "gagal"
+ * beserta pesannya lalu disimpan, sehingga FR-11 & FR-16 terpenuhi tanpa
+ * mematikan proses Node.js.
+ *
+ * @param {string} id id rekaman (PLG-YYYYMMDD-XXXXXXXX)
+ */
+async function jalankanAnalisisLatar(id) {
+  const rekaman = cariRekaman(id);
+  if (!rekaman || analisisBerjalan.has(rekaman.id)) return;
+
+  analisisBerjalan.add(rekaman.id);
+  rekaman.status_pemeriksaan = STATUS_PEMERIKSAAN.DIPROSES;
+  rekaman.pesan_status = 'Dokumen sedang dianalisis oleh layanan AI.';
+  rekaman.waktu_mulai = new Date().toISOString();
+  rekaman.waktu_selesai = null;
+  simpanRiwayatJikaAktif();
+
+  try {
+    const berkas = rekaman.berkas || {};
+    const jalurBerkas = path.join(UPLOAD_DIR, String(berkas.nama_tersimpan || ''));
+
+    if (!berkas.nama_tersimpan || !fs.existsSync(jalurBerkas)) {
+      throw new AppError(404,
+        'Berkas dokumen tidak ditemukan di penyimpanan; unggah ulang dokumen.');
+    }
+
+    // Teks diekstraksi ulang dari berkas tersimpan: teks penuh tidak disimpan
+    // di data/hasil-analisis.json (hanya ringkasannya).
+    const ekstraksi = await ekstraksiTeksDokumen(
+      jalurBerkas, berkas.mime_type, berkas.nama_asli);
+
+    const meta = rekaman.document_metadata || {};
+    const pemilik = {
+      pengguna: { id: meta.user_id || null, email: meta.user_email || null },
+    };
+
+    const { analisis, info } = await analisisDokumen(meta, ekstraksi, pemilik);
+
+    const pengaturan = konfigLlm();
+    const hasil = { ...analisis };
+    if (!pengaturan.tampilSumber && Array.isArray(hasil.flagged_passages)) {
+      hasil.flagged_passages = hasil.flagged_passages.map((temuan) => ({
+        ...temuan,
+        source_reference: null,
+      }));
+    }
+
+    Object.assign(rekaman, hasil, {
+      id: rekaman.id,
+      created_at: rekaman.created_at,
+      status_pemeriksaan: STATUS_PEMERIKSAAN.BERHASIL,
+      pesan_status: 'Analisis selesai.',
+      waktu_mulai: rekaman.waktu_mulai,
+      waktu_selesai: new Date().toISOString(),
+      analysis_engine: info.label,
+      llm: keteranganLlm(info),
+      berkas: rekaman.berkas,
+    });
+
+    simpanRiwayatJikaAktif();
+    console.log(`[analisis] ${rekaman.id} selesai | skor `
+      + `${rekaman.overall_similarity_score}% (${rekaman.classification_level}) `
+      + `| ${info.durasi_ms} ms${info.peringatan ? ` | peringatan: ${info.peringatan}` : ''}`);
+  } catch (err) {
+    rekaman.status_pemeriksaan = STATUS_PEMERIKSAAN.GAGAL;
+    rekaman.pesan_status = (err && err.message) || 'Analisis dokumen gagal.';
+    rekaman.waktu_selesai = new Date().toISOString();
+    simpanRiwayatJikaAktif();
+    console.error(`[analisis] ${rekaman.id} gagal | ${rekaman.pesan_status}`);
+  } finally {
+    analisisBerjalan.delete(rekaman.id);
+  }
+}
+
 
 // Middleware multer: terima field berkas dengan beberapa nama yang lazim dipakai.
 const terimaBerkas = (req, res, next) => {
@@ -1947,8 +2261,117 @@ const terimaBerkas = (req, res, next) => {
 // atas nama pemilik token (document_metadata.user_id), dan riwayat mahasiswa
 // pada GET /api/history benar-benar terisi.
 router.post('/upload', wajibLogin, terimaBerkas, tanganiUnggah);
-router.post('/documents', wajibLogin, terimaBerkas, tanganiUnggah);          // alias dipakai di upload.html
-router.post('/documents/analyze', wajibLogin, terimaBerkas, tanganiUnggah);  // alias "analyze" (lihat upload.html)
+// Alur bertahap (FR-04 + FR-11): simpan + ekstraksi saja, analisis terpisah.
+router.post('/documents', wajibLogin, terimaBerkas, tanganiSimpanDokumen);
+// Alias lama: unggah + langsung analisis dalam satu permintaan.
+router.post('/documents/analyze', wajibLogin, terimaBerkas, tanganiUnggah);
+
+/* ------------- GET /api/documents/:id — informasi dokumen (FR-04) -------- */
+router.get('/documents/:id', wajibLogin, (req, res, next) => {
+  const rekaman = cariRekaman(req.params.id);
+
+  if (!rekaman) {
+    return next(new AppError(404,
+      `Dokumen dengan id "${req.params.id}" tidak ditemukan.`));
+  }
+  if (!bolehAksesRekaman(req.pengguna, rekaman)) {
+    return next(new AppError(403,
+      'Akses ditolak: dokumen ini milik akun lain.', { id: req.params.id }));
+  }
+
+  res.json({
+    status: 'success',
+    id: rekaman.id,
+    created_at: rekaman.created_at || null,
+    status_pemeriksaan: statusRekaman(rekaman),
+    pesan_status: rekaman.pesan_status || null,
+    waktu_mulai: rekaman.waktu_mulai || null,
+    waktu_selesai: rekaman.waktu_selesai || null,
+    document_metadata: rekaman.document_metadata || null,
+    berkas: rekaman.berkas || null,
+    teks_dokumen: rekaman.teks_dokumen || null,
+  });
+});
+
+/* ---------- POST /api/documents/:id/analyze — mulai periksa (FR-11) ------ */
+/**
+ * Memulai analisis LLM secara asinkron. Membalas 202 Accepted; pemanggil
+ * memantau kemajuan lewat GET /api/results/:id/status.
+ * Rekaman berstatus "gagal" boleh diperiksa ulang lewat rute ini.
+ */
+router.post('/documents/:id/analyze', wajibLogin, (req, res, next) => {
+  const rekaman = cariRekaman(req.params.id);
+
+  if (!rekaman) {
+    return next(new AppError(404,
+      `Dokumen dengan id "${req.params.id}" tidak ditemukan.`));
+  }
+  if (!bolehAksesRekaman(req.pengguna, rekaman)) {
+    return next(new AppError(403,
+      'Akses ditolak: dokumen ini milik akun lain.', { id: req.params.id }));
+  }
+
+  const status = statusRekaman(rekaman);
+
+  if (status === STATUS_PEMERIKSAAN.DIPROSES || analisisBerjalan.has(rekaman.id)) {
+    return res.status(202).json({
+      status: 'success',
+      id: rekaman.id,
+      status_pemeriksaan: STATUS_PEMERIKSAAN.DIPROSES,
+      pesan_status: rekaman.pesan_status || 'Analisis sedang berjalan.',
+    });
+  }
+  if (status === STATUS_PEMERIKSAAN.BERHASIL) {
+    return next(new AppError(409,
+      'Dokumen ini sudah dianalisis. Hapus hasilnya bila ingin memeriksa ulang.',
+      { id: rekaman.id }));
+  }
+
+  // status "menunggu" atau "gagal" -> jalankan (mendukung periksa ulang).
+  rekaman.status_pemeriksaan = STATUS_PEMERIKSAAN.DIPROSES;
+  rekaman.pesan_status = 'Analisis dimulai.';
+  rekaman.waktu_mulai = new Date().toISOString();
+  rekaman.waktu_selesai = null;
+  simpanRiwayatJikaAktif();
+
+  res.status(202).json({
+    status: 'success',
+    id: rekaman.id,
+    status_pemeriksaan: STATUS_PEMERIKSAAN.DIPROSES,
+    pesan_status: rekaman.pesan_status,
+  });
+
+  // Analisis berjalan setelah respons terkirim agar permintaan tidak menahan
+  // koneksi sampai LLM selesai (batas 30 detik per panggilan tetap berlaku).
+  setImmediate(() => { jalankanAnalisisLatar(rekaman.id); });
+});
+
+/* ----------- GET /api/results/:id/status — polling status (FR-11) -------- */
+router.get('/results/:id/status', wajibLogin, (req, res, next) => {
+  const rekaman = cariRekaman(req.params.id);
+
+  if (!rekaman) {
+    return next(new AppError(404,
+      `Hasil analisis dengan id "${req.params.id}" tidak ditemukan.`));
+  }
+  if (!bolehAksesRekaman(req.pengguna, rekaman)) {
+    return next(new AppError(403,
+      'Akses ditolak: hasil analisis ini milik akun lain.', { id: req.params.id }));
+  }
+
+  const skor = Number(rekaman.overall_similarity_score);
+
+  res.json({
+    status: 'success',
+    id: rekaman.id,
+    status_pemeriksaan: statusRekaman(rekaman),
+    pesan_status: rekaman.pesan_status || null,
+    waktu_mulai: rekaman.waktu_mulai || null,
+    waktu_selesai: rekaman.waktu_selesai || null,
+    skor: Number.isFinite(skor) ? skor : null,
+    klasifikasi: rekaman.classification_level || null,
+  });
+});
 
 /* ---------------------- GET /api/history & /api/results ------------------ */
 /**
@@ -1963,6 +2386,7 @@ function daftarRiwayat(query, pengguna) {
   const kataKunci  = ambilField(query, 'q').toLowerCase();
   const dari       = ambilField(query, 'dari', 'tanggal_dari');       // batas awal (ISO)
   const sampai     = ambilField(query, 'sampai', 'tanggal_sampai');   // batas akhir (ISO)
+  const status     = ambilField(query, 'status_pemeriksaan', 'status').toLowerCase();
   const limit      = Math.min(Math.max(parseInt(query.limit, 10) || 50, 1), 200);
   const offset     = Math.max(parseInt(query.offset, 10) || 0, 0);
 
@@ -1973,6 +2397,17 @@ function daftarRiwayat(query, pengguna) {
   if (pengguna && pengguna.peran !== PERAN_ADMIN) {
     const pemilik = pengguna.id;
     data = data.filter((r) => r.document_metadata && r.document_metadata.user_id === pemilik);
+  }
+
+  // FR-11: riwayat hanya memuat pemeriksaan yang sudah selesai. Rekaman yang
+  // masih "menunggu"/"diproses" dipantau lewat GET /api/results/:id/status.
+  if (status) {
+    data = data.filter((r) => statusRekaman(r) === status);
+  } else {
+    data = data.filter((r) => {
+      const s = statusRekaman(r);
+      return s === STATUS_PEMERIKSAAN.BERHASIL || s === STATUS_PEMERIKSAAN.GAGAL;
+    });
   }
 
   if (nim) {
@@ -2001,34 +2436,9 @@ function daftarRiwayat(query, pengguna) {
 }
 
 router.get('/history', wajibLogin, (req, res) => {
-  // Filter otomatis per user yang login
-  const pengguna = req.pengguna;
-  const userId = pengguna ? pengguna.id : null;
-  
-  // User non-admin: hanya lihat riwayat mereka sendiri
-  const query = req.query;
-  if (pengguna.peran !== 'Administrator' && userId) {
-    let data = dbHasilAnalisis.slice();
-    // Filter by user_id
-    data = data.filter((r) => r.document_metadata && r.document_metadata.user_id === userId);
-    
-    const limit = Math.min(Math.max(parseInt(query.limit, 10) || 50, 1), 200);
-    const offset = Math.max(parseInt(query.offset, 10) || 0, 0);
-    const total = data.length;
-    
-    res.set('X-Total-Count', String(total));
-    return res.json({
-      status: 'success',
-      total,
-      count: data.slice(offset, offset + limit).length,
-      limit,
-      offset,
-      data: data.slice(offset, offset + limit),
-    });
-  }
-  
-  // Admin: tampilkan semua atau filter by query
-  const { total, limit, offset, data } = daftarRiwayat(query);
+  // daftarRiwayat sudah menangani isolasi data per pemilik token: mahasiswa
+  // hanya melihat rekamannya sendiri, Administrator melihat semuanya.
+  const { total, limit, offset, data } = daftarRiwayat(req.query, req.pengguna);
   res.set('X-Total-Count', String(total));
   res.json({
     status: 'success',
@@ -2236,6 +2646,23 @@ router.post('/auth/login', (req, res, next) => {
   }
 });
 
+/* ------------------- POST /api/auth/logout (UC-08/14) -------------------- */
+/**
+ * Mengakhiri sesi aktif. Token yang dipakai langsung dicabut sehingga tidak
+ * dapat dipakai lagi walau masa berlakunya belum habis (lihat 7.2).
+ * Frontend juga menghapus token dari sessionStorage (public/js/ippl-api.js).
+ */
+router.post('/auth/logout', wajibLogin, (req, res) => {
+  const dicabut = cabutSesi(req.sesi);
+  console.log(`[auth] keluar: ${req.pengguna.email}${dicabut ? '' : ' (token tanpa jti)'}`);
+
+  res.json({
+    status: 'success',
+    message: 'Sesi berhasil diakhiri. Silakan masuk kembali bila diperlukan.',
+    dicabut,
+  });
+});
+
 /* ==========================================================================
  * 8.8 PANEL ADMIN (UC-09 s/d UC-13) — wajib token Administrator
  * ======================================================================== */
@@ -2357,6 +2784,11 @@ router.get('/admin/documents', wajibLogin, wajibAdmin, (req, res) => {
       skor: typeof rekaman.overall_similarity_score === 'number'
         ? rekaman.overall_similarity_score : null,
       klasifikasi: rekaman.classification_level || null,
+      // FR-11: status pemeriksaan apa adanya (menunggu/diproses/berhasil/gagal).
+      status_pemeriksaan: rekaman.status_pemeriksaan || null,
+      pesan_status: rekaman.pesan_status || null,
+      waktu_mulai: rekaman.waktu_mulai || null,
+      waktu_selesai: rekaman.waktu_selesai || null,
       jumlah_temuan: Array.isArray(rekaman.flagged_passages) ? rekaman.flagged_passages.length : 0,
       diunggah_pada: rekaman.created_at || null,
       diperiksa: typeof rekaman.overall_similarity_score === 'number',
@@ -2446,7 +2878,7 @@ function booleanKonfig(nilai, bawaan) {
 router.get('/admin/ai-config', wajibLogin, wajibAdmin, (req, res) => {
   res.json({
     status: 'success',
-    tersimpan: fs.existsSync(AI_CONFIG_FILE),
+    tersimpan: basisData.adaKonfigAi(),
     catatan: 'Kunci API hanya disimpan di server (data/ai-config.json) dan '
       + 'dikirim kembali dalam bentuk tersamar.',
     config: publikKonfigAi(),
@@ -2682,9 +3114,54 @@ app.use((err, req, res, next) => {
  * 11. MENJALANKAN SERVER
  * ======================================================================== */
 
+/**
+ * Membuka basis data SQLite dan memindahkan data lama dari berkas JSON
+ * (data/users.json, data/ai-config.json, data/hasil-analisis.json).
+ *
+ * Migrasi hanya berjalan bila tabel tujuan masih kosong, sehingga aman
+ * dijalankan berulang. Berkas JSON lama tidak dihapus — dipakai sebagai
+ * cadangan selama masa transisi.
+ */
+function siapkanBasisData() {
+  basisData.buka(DB_SQLITE);
+
+  const dipindahkan = [];
+
+  if (basisData.jumlahBaris('pengguna') === 0 && fs.existsSync(USERS_FILE)) {
+    const lama = muatJsonBerkas(USERS_FILE, []);
+    if (Array.isArray(lama) && lama.length) {
+      basisData.simpanPengguna(lama);
+      dipindahkan.push(`${lama.length} pengguna`);
+    }
+  }
+
+  if (basisData.jumlahBaris('dokumen') === 0 && fs.existsSync(DB_FILE)) {
+    const lama = muatJsonBerkas(DB_FILE, []);
+    if (Array.isArray(lama) && lama.length) {
+      basisData.simpanRekaman(lama);
+      dipindahkan.push(`${lama.length} rekaman`);
+    }
+  }
+
+  if (!basisData.adaKonfigAi() && fs.existsSync(AI_CONFIG_FILE)) {
+    const lama = muatJsonBerkas(AI_CONFIG_FILE, null);
+    if (lama && typeof lama === 'object' && !Array.isArray(lama)) {
+      basisData.simpanKonfigAi(lama);
+      dipindahkan.push('konfigurasi AI');
+    }
+  }
+
+  if (dipindahkan.length) {
+    console.log(`[db] migrasi JSON -> SQLite selesai: ${dipindahkan.join(', ')} `
+      + '(berkas JSON lama dibiarkan sebagai cadangan).');
+  }
+}
+
+siapkanBasisData();
 muatRiwayat();
 muatPengguna();
 muatKonfigAi();
+muatSesiDicabut();   // token yang sudah logout tetap ditolak setelah restart
 
 const server = app.listen(PORT, HOST, () => {
   const alamat = HOST === '0.0.0.0' ? 'localhost' : HOST;
@@ -2704,10 +3181,15 @@ const server = app.listen(PORT, HOST, () => {
       + `timeout ${konfigLlm().timeoutMs} ms)${konfigLlm().dariPanel ? ' [panel Admin]' : ' [.env]'}`
     : 'BELUM DIKONFIGURASI — aktifkan layanan AI pada panel Admin atau isi LLM_API_KEY pada .env'
       + (LLM_FALLBACK_SIMULASI ? ' (fallback simulasi aktif)' : '')}`);
-  console.log(`  Penyimpanan: ${path.relative(ROOT_DIR, DB_FILE) || DB_FILE}`);
-  console.log(`  Pengguna   : ${dbPengguna.length} akun (${path.relative(ROOT_DIR, USERS_FILE)})`);
-  console.log(`  Konfig AI  : ${fs.existsSync(AI_CONFIG_FILE)
-    ? `${path.relative(ROOT_DIR, AI_CONFIG_FILE)} (aktif=${konfigLlm().aktif}, `
+  const infoDb = basisData.info();
+  console.log(`  Basis data : ${path.relative(ROOT_DIR, DB_SQLITE) || DB_SQLITE} `
+    + `(${infoDb.mesin}, ${infoDb.ukuran_byte} byte, `
+    + `dokumen=${infoDb.tabel.dokumen}, pengguna=${infoDb.tabel.pengguna})`);
+  console.log(`  Penyimpanan: tabel dokumen + hasil_analisis `
+    + `(${dbHasilAnalisis.length} rekaman di memori)`);
+  console.log(`  Pengguna   : ${dbPengguna.length} akun (tabel pengguna)`);
+  console.log(`  Konfig AI  : ${basisData.adaKonfigAi()
+    ? `tabel ai_config (aktif=${konfigLlm().aktif}, `
       + `ambang ${konfigLlm().ambangSedang}/${konfigLlm().ambangTinggi}, `
       + `maks ${konfigLlm().maksUkuranMb} MB)`
     : 'belum ada — memakai nilai bawaan .env'}`);
@@ -2716,12 +3198,21 @@ const server = app.listen(PORT, HOST, () => {
   console.log('');
 });
 
-// Penutupan yang rapi: pastikan riwayat tersimpan sebelum proses berakhir.
+// Penutupan yang rapi: pastikan seluruh data tersimpan lalu tutup basis data.
 ['SIGINT', 'SIGTERM'].forEach((sinyal) => {
   process.on(sinyal, () => {
-    console.log(`\n[server] Menerima ${sinyal}, menyimpan riwayat dan menghentikan layanan...`);
-    simpanRiwayat();
-    server.close(() => process.exit(0));
+    console.log(`\n[server] Menerima ${sinyal}, menyimpan data dan menghentikan layanan...`);
+    try {
+      simpanRiwayat();
+      simpanPengguna();
+      simpanKonfigAi();
+    } catch (galat) {
+      console.error(`[db] gagal menyimpan sebelum berhenti: ${galat.message}`);
+    }
+    server.close(() => {
+      basisData.tutup();
+      process.exit(0);
+    });
   });
 });
 

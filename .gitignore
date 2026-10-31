@@ -22,7 +22,17 @@ data/uploads/
 data/users.json
 data/ai-config.json
 data/hasil-analisis.json
+data/sesi-dicabut.json
 data/*.tmp
+
+# ---- Basis data SQLite (dibuat saat aplikasi berjalan) ----
+# ippl.db memuat hash kata sandi, kunci API provider, dan seluruh hasil analisis.
+data/*.db
+data/*.db-wal
+data/*.db-shm
+*.db
+*.db-wal
+*.db-shm
 
 # ---- Log pengujian ----
 # Log baru diabaikan; dua log lama yang sudah tercatat di git tetap terpantau

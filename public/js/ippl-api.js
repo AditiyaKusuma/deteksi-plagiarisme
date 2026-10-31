@@ -133,12 +133,29 @@
     return tokenTersimpan && !!data.token;
   }
 
-  /** Mengakhiri sesi: token & sesi dihapus, lalu diarahkan ke halaman masuk. */
+  /**
+   * Mengakhiri sesi (UC-08 & UC-14): token dicabut di server lewat
+   * POST /api/auth/logout, lalu token & sesi dihapus dari browser, baru
+   * diarahkan ke halaman masuk. Bila server tidak dapat dihubungi, sesi
+   * lokal tetap dibersihkan agar pengguna tidak terjebak.
+   */
   function keluar(halaman) {
-    hapusKunci(KUNCI_TOKEN);
-    hapusKunci(KUNCI_SESI);
-    hapusKunci(KUNCI_SESI_ADMIN);
-    global.location.href = halaman || 'login.html';
+    var tujuan = halaman || 'login.html';
+
+    function bersihkan() {
+      hapusKunci(KUNCI_TOKEN);
+      hapusKunci(KUNCI_SESI);
+      hapusKunci(KUNCI_SESI_ADMIN);
+      global.location.href = tujuan;
+    }
+
+    if (!token()) {
+      bersihkan();
+      return;
+    }
+
+    minta('/api/auth/logout', { metode: 'POST', timeout: 8000 })
+      .then(bersihkan, bersihkan);
   }
 
   /* ======================================================================

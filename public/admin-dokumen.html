@@ -173,8 +173,10 @@
 
           <select class="form-select form-select-sm" id="filterStatus" style="width: auto" aria-label="Filter status pemeriksaan">
             <option value="">Semua status</option>
-            <option value="diperiksa">Sudah diperiksa</option>
-            <option value="belum">Belum diperiksa</option>
+            <option value="menunggu">Menunggu</option>
+            <option value="diproses">Sedang diproses</option>
+            <option value="berhasil">Berhasil</option>
+            <option value="gagal">Gagal</option>
           </select>
 
           <select class="form-select form-select-sm" id="modeDemo" style="width: auto"
@@ -377,6 +379,22 @@
       var TERBACA_SERVER = '';     // field jumlah_terbaca_total (mis. "2,4 MB")
       var galatTerakhir  = null;   // Error pemuatan terakhir (null = berhasil)
 
+      /**
+       * Label & warna badge untuk status pemeriksaan (FR-11):
+       * menunggu | diproses | berhasil | gagal.
+       */
+      var BADGE_STATUS = {
+        menunggu: { teks: 'Menunggu', cls: 'bg-secondary-subtle text-secondary-emphasis border' },
+        diproses: { teks: 'Sedang diproses', cls: 'bg-warning-subtle text-warning-emphasis border border-warning' },
+        berhasil: { teks: 'Berhasil', cls: 'bg-success-subtle text-success-emphasis border border-success' },
+        gagal:    { teks: 'Gagal', cls: 'bg-danger-subtle text-danger-emphasis border border-danger' }
+      };
+
+      function badgePemeriksaan(status) {
+        var s = BADGE_STATUS[String(status || '').toLowerCase()] || BADGE_STATUS.menunggu;
+        return '<span class="badge ' + s.cls + '">' + s.teks + '</span>';
+      }
+
       /** Memetakan satu item GET /api/admin/documents ke bentuk yang dibaca render(). */
       function dariItemServer(item) {
         var berkas = (item && item.berkas) || {};
@@ -395,6 +413,10 @@
           kata: 0,
           waktu: (item && item.diunggah_pada) || null,
           skor: item && typeof item.skor === 'number' ? item.skor : null,
+          // FR-11: status dari server; rekaman lama tanpa status dianggap selesai.
+          status: String((item && item.status_pemeriksaan)
+            || (item && typeof item.skor === 'number' ? 'berhasil' : 'menunggu')).toLowerCase(),
+          pesan: (item && item.pesan_status) || '',
           temuans: (item && item.jumlah_temuan) || 0,
           struktur: null,
           rincian: []
@@ -452,6 +474,8 @@
           waktu: (rekaman && rekaman.created_at) || ringkas.waktu,
           skor: rekaman && typeof rekaman.overall_similarity_score === 'number'
             ? rekaman.overall_similarity_score : ringkas.skor,
+          status: ringkas.status,
+          pesan: (rekaman && rekaman.pesan_status) || ringkas.pesan || '',
           temuans: temuan.length,
           struktur: ringkasStruktur((rekaman && rekaman.structure_analysis) || null),
           rincian: rincianTemuan(temuan)
@@ -671,8 +695,7 @@
         var daftar = semua.filter(function (d) {
           if (nimTautan && d.nim !== nimTautan) return false;
           if (jenisPilih && jenisKode(d.jenis) !== jenisPilih) return false;
-          if (statusPilih === 'diperiksa' && typeof d.skor !== 'number') return false;
-          if (statusPilih === 'belum' && typeof d.skor === 'number') return false;
+          if (statusPilih && d.status !== statusPilih) return false;
           if (!cari) return true;
           return (d.judul + ' ' + d.berkas + ' ' + d.nim + ' ' + d.jenis).toLowerCase().indexOf(cari) !== -1;
         });
@@ -694,9 +717,7 @@
 
         isiTabel.innerHTML = daftar.map(function (d, idx) {
           var t = tingkat(d.skor);
-          var badgeStatus = typeof d.skor === 'number'
-            ? '<span class="badge bg-success-subtle text-success-emphasis border border-success">Sudah diperiksa</span>'
-            : '<span class="badge bg-secondary-subtle text-secondary-emphasis border">Belum diperiksa</span>';
+          var badgeStatus = badgePemeriksaan(d.status);
 
           return '<tr>' +
             '<td class="ps-3">' +
@@ -778,9 +799,9 @@
             '<div class="detail-row"><span class="k">Jumlah Kata</span><span class="v">' + (d.kata ? d.kata.toLocaleString('id-ID') + ' kata' : '\u2014') + '</span></div>' +
             '<div class="detail-row"><span class="k">Waktu Diunggah</span><span class="v">' + esc(d.waktu ? tanggalRingkas(d.waktu) : '\u2014') + '</span></div>' +
             '<div class="detail-row"><span class="k">Status Pemeriksaan</span><span class="v">' +
-              (typeof d.skor === 'number'
-                ? '<span class="badge bg-success-subtle text-success-emphasis border border-success">Sudah diperiksa</span>'
-                : '<span class="badge bg-secondary-subtle text-secondary-emphasis border">Belum diperiksa</span>') +
+              badgePemeriksaan(d.status) +
+              (d.pesan && d.status !== 'berhasil'
+                ? ' <span class="row-meta">' + esc(d.pesan) + '</span>' : '') +
             '</span></div>' +
             '<div class="detail-row"><span class="k">Skor Kemiripan</span><span class="v">' +
               (t ? '<span class="badge ' + t.cls + '">' + d.skor + '% \u00b7 ' + t.label + '</span>'

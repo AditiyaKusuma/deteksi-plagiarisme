@@ -452,6 +452,9 @@
           arsip: r.created_at || null,
           skor: Math.round(Number(r && r.overall_similarity_score) || 0),
           engine: r.analysis_engine || null,
+          // FR-11/FR-16: status pemeriksaan (riwayat memuat berhasil & gagal).
+          status: String((r && r.status_pemeriksaan) || 'berhasil').toLowerCase(),
+          pesan: (r && r.pesan_status) || '',
           dokumen: {
             judul: meta.judul || 'Tanpa judul',
             nim: String(meta.nim || ''),
@@ -638,7 +641,10 @@
             '<td>' + (i.dokumen.nim ? esc(i.dokumen.nim) : '<span class="text-secondary">\u2014</span>') + '</td>' +
             '<td><span class="row-meta">' + esc(i.dokumen.jenis || '\u2014') + '</span></td>' +
             '<td class="text-center"><span class="badge ' + t.cls + '">' + i.skor + '%</span></td>' +
-            '<td><span class="badge ' + t.cls + '">' + t.label + '</span></td>' +
+            '<td>' + (i.status === 'gagal'
+              ? '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger" title="'
+                  + esc(i.pesan || 'Analisis gagal diproses.') + '">Gagal</span>'
+              : '<span class="badge ' + t.cls + '">' + t.label + '</span>') + '</td>' +
             '<td class="text-end pe-3 no-print">' +
               '<button type="button" class="btn btn-sm btn-outline-primary" data-detail="' + idx + '">' +
                 '<i class="bi bi-eye me-1"></i>Detail' +
@@ -747,6 +753,11 @@
             barisDetail('Skor Kemiripan', '<span class="badge ' + t.cls + '">' + i.skor
               + '% \u00b7 Indikasi ' + t.label + '</span>') +
             barisDetail('Jumlah Temuan', temuan.length + ' temuan') +
+            (i.status === 'gagal'
+              ? barisDetail('Status Pemeriksaan', '<span class="badge bg-danger-subtle text-danger-emphasis '
+                  + 'border border-danger">Gagal</span>'
+                  + (i.pesan ? ' <span class="row-meta">' + esc(i.pesan) + '</span>' : ''))
+              : '') +
             (i.engine ? barisDetail('Mesin Analisis', esc(i.engine)) : '') +
             struktur +
           '</div>' +

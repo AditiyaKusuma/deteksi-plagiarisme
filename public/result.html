@@ -483,6 +483,135 @@
         }
       }
 
+      /* ================= status pemeriksaan (FR-11) ================= */
+
+      /** Panel pemuatan dipakai ulang untuk menampilkan proses analisis. */
+      function tampilkanProses(pesanHtml) {
+        errorPanel.classList.add('d-none');
+        bagianHasil.forEach(function (el) { el.classList.add('d-none'); });
+        loadingPanel.classList.remove('d-none');
+        loadingInfo.innerHTML = pesanHtml;
+      }
+
+      /** Panel galat khusus status "gagal", dengan tombol periksa ulang. */
+      function tampilkanGagal(pesanHtml, id) {
+        loadingPanel.classList.add('d-none');
+        bagianHasil.forEach(function (el) { el.classList.add('d-none'); });
+
+        errorPanel.classList.remove('d-none');
+        errorPanel.innerHTML =
+          '<div class="d-flex gap-3">' +
+            '<i class="bi bi-x-octagon-fill fs-4"></i>' +
+            '<div>' +
+              '<p class="fw-semibold mb-1">Pemeriksaan dokumen gagal</p>' +
+              '<p class="mb-3 small">' + pesanHtml + '</p>' +
+              '<div class="d-flex flex-wrap gap-2">' +
+                '<button type="button" class="btn btn-sm btn-danger" id="btnPeriksaUlang">' +
+                  '<i class="bi bi-arrow-repeat me-1"></i>Periksa Ulang</button>' +
+                '<a class="btn btn-sm btn-outline-secondary" href="upload.html">' +
+                  '<i class="bi bi-cloud-arrow-up me-1"></i>Unggah Dokumen</a>' +
+                '<a class="btn btn-sm btn-outline-secondary" href="riwayat.html">' +
+                  '<i class="bi bi-clock-history me-1"></i>Riwayat</a>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+
+        var tombol = document.getElementById('btnPeriksaUlang');
+        if (tombol) {
+          tombol.addEventListener('click', function () {
+            tombol.disabled = true;
+            tombol.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Memulai\u2026';
+
+            var tajuk = { 'Accept': 'application/json' };
+            var token = IPPL.token();
+            if (token) tajuk.Authorization = 'Bearer ' + token;
+
+            fetch(API_BASE + '/api/documents/' + encodeURIComponent(id) + '/analyze',
+              { method: 'POST', headers: tajuk })
+              .then(function (res) {
+                if (!res.ok && res.status !== 202) {
+                  throw new Error('Server membalas HTTP ' + res.status + '.');
+                }
+                pantauStatus(id, POLL_MAKS);
+              })
+              .catch(function (err) {
+                tampilkanGagal(esc(err && err.message ? err.message : String(err)), id);
+              });
+          });
+        }
+      }
+
+      /* ---------------- polling GET /api/results/:id/status ---------------- */
+      var POLL_MS = 3000;    // jeda antar pemeriksaan status
+      var POLL_MAKS = 100;   // ~5 menit sebelum menyerah
+
+      function ambilStatus(id) {
+        var tajuk = { 'Accept': 'application/json' };
+        var token = IPPL.token();
+        if (token) tajuk.Authorization = 'Bearer ' + token;
+
+        return fetch(API_BASE + '/api/results/' + encodeURIComponent(id) + '/status',
+          { headers: tajuk })
+          .then(function (res) {
+            return res.text().then(function (teks) {
+              var data = null;
+              try { data = teks ? JSON.parse(teks) : null; } catch (err) { data = null; }
+
+              if (!res.ok) {
+                var err = new Error(
+                  (data && (data.message || data.error)) ||
+                  ('Server membalas HTTP ' + res.status + ' tanpa keterangan.')
+                );
+                err.status = res.status;
+                throw err;
+              }
+              if (!data) throw new Error('Respons status tidak dapat dibaca sebagai JSON.');
+              return data;
+            });
+          }, function () {
+            var jaringan = new Error('Koneksi ke server gagal.');
+            jaringan.network = true;
+            throw jaringan;
+          });
+      }
+
+      /**
+       * Memantau status pemeriksaan sampai "berhasil" atau "gagal".
+       * @param {string} id id rekaman
+       * @param {number} sisa jumlah percobaan tersisa
+       */
+      function pantauStatus(id, sisa) {
+        if (sisa <= 0) {
+          tampilkanError('Pemeriksaan melebihi waktu tunggu. Muat ulang halaman ini ' +
+            'untuk melihat status terbaru.');
+          return;
+        }
+
+        tampilkanProses('Dokumen sedang dianalisis oleh layanan AI\u2026 ' +
+          'status diperiksa otomatis setiap ' + (POLL_MS / 1000) + ' detik.');
+
+        ambilStatus(id)
+          .then(function (info) {
+            var s = String((info && info.status_pemeriksaan) || '').toLowerCase();
+
+            if (s === 'berhasil') { muatHasil(id); return; }
+            if (s === 'gagal') {
+              tampilkanGagal(esc(info.pesan_status || 'Analisis dokumen gagal.'), id);
+              return;
+            }
+
+            window.setTimeout(function () { pantauStatus(id, sisa - 1); }, POLL_MS);
+          })
+          .catch(function (err) {
+            if (err && err.status === 404) {
+              tampilkanError('Rekaman dengan ID <code>' + esc(id) + '</code> tidak ditemukan (HTTP 404).');
+              return;
+            }
+            // Gangguan sementara: coba lagi sampai batas percobaan habis.
+            window.setTimeout(function () { pantauStatus(id, sisa - 1); }, POLL_MS);
+          });
+      }
+
       /* ================= pengambilan data: GET /api/results/:id ============ */
       function ambilHasil(id) {
         var pengendali = window.AbortController ? new AbortController() : null;
@@ -803,38 +932,58 @@
         return;
       }
 
+      /**
+       * Memuat rekaman lalu memilih tampilan sesuai status_pemeriksaan:
+       *   menunggu/diproses -> polling status (FR-11)
+       *   gagal             -> panel galat + tombol periksa ulang (FR-16)
+       *   berhasil          -> render hasil lengkap
+       */
+      function muatHasil(id) {
+        return ambilHasil(id)
+          .then(function (rec) {
+            var s = String((rec && rec.status_pemeriksaan) || 'berhasil').toLowerCase();
+
+            if (s === 'menunggu' || s === 'diproses') {
+              pantauStatus(id, POLL_MAKS);
+              return;
+            }
+            if (s === 'gagal') {
+              tampilkanGagal(esc(rec.pesan_status || 'Analisis dokumen gagal.'), id);
+              return;
+            }
+
+            render(normalisasi(rec));
+          })
+          .catch(function (err) {
+            // Cadangan: rekaman yang dikembalikan server saat "Simpan riwayat"
+            // dimatikan (panel Admin) hanya ada di sessionStorage, bukan di server.
+            var cadangan = bacaJson(sessionStorage, 'hasilAnalisis', null);
+            if (cadangan && String(cadangan.id) === String(id)) {
+              render(normalisasi(cadangan));
+              return;
+            }
+
+            var pesan;
+
+            if (err && err.status === 404) {
+              pesan = 'Hasil analisis dengan ID <code>' + esc(id) + '</code> tidak ditemukan di server ' +
+                      '(HTTP 404). Kemungkinan data sudah dihapus.';
+            } else if (err && err.status) {
+              pesan = 'Server membalas HTTP ' + err.status + ': ' + esc(err.message);
+            } else if (err && err.network) {
+              pesan = 'Tidak dapat menghubungi backend di <code>' + esc(API_BASE) + '</code>. ' +
+                      esc(err.message) + ' Pastikan server berjalan (<code>npm start</code>).';
+            } else {
+              pesan = esc(err && err.message ? err.message : String(err));
+            }
+
+            tampilkanError(pesan);
+            console.error('[result] gagal memuat hasil:', err);
+          });
+      }
+
       loadingInfo.textContent = 'GET ' + API_BASE + '/api/results/' + hasilId;
-
-      ambilHasil(hasilId)
-        .then(function (rec) {
-          render(normalisasi(rec));
-        })
-        .catch(function (err) {
-          // Cadangan: rekaman yang dikembalikan server saat "Simpan riwayat"
-          // dimatikan (panel Admin) hanya ada di sessionStorage, bukan di server.
-          var cadangan = bacaJson(sessionStorage, 'hasilAnalisis', null);
-          if (cadangan && String(cadangan.id) === String(hasilId)) {
-            render(normalisasi(cadangan));
-            return;
-          }
-
-          var pesan;
-
-          if (err && err.status === 404) {
-            pesan = 'Hasil analisis dengan ID <code>' + esc(hasilId) + '</code> tidak ditemukan di server ' +
-                    '(HTTP 404). Kemungkinan data sudah dihapus.';
-          } else if (err && err.status) {
-            pesan = 'Server membalas HTTP ' + err.status + ': ' + esc(err.message);
-          } else if (err && err.network) {
-            pesan = 'Tidak dapat menghubungi backend di <code>' + esc(API_BASE) + '</code>. ' +
-                    esc(err.message) + ' Pastikan server berjalan (<code>npm start</code>).';
-          } else {
-            pesan = esc(err && err.message ? err.message : String(err));
-          }
-
-          tampilkanError(pesan);
-          console.error('[result] gagal memuat hasil:', err);
-        });
+      muatHasil(hasilId);
     })();
   </script>
 </body>

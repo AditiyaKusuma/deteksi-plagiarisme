@@ -288,7 +288,21 @@
         }
 
         var diizinkan = ['upload.html', 'riwayat.html', 'result.html'];
-        return diizinkan.indexOf(next) !== -1 ? next : 'upload.html';
+        var tujuan = String(next || '').trim();
+        var cocok = tujuan.match(/^([a-z-]+\.html)(\?[^#]*)?$/i);
+
+        if (cocok && diizinkan.indexOf(cocok[1]) !== -1) {
+          // Parameter "id" diteruskan agar hasil tertentu langsung terbuka
+          // (mis. result.html?id=PLG-...). Parameter lain dibuang demi keamanan.
+          try {
+            var id = new URLSearchParams(cocok[2] || '').get('id');
+            if (id && /^[A-Za-z0-9-]{1,64}$/.test(id)) {
+              return cocok[1] + '?id=' + encodeURIComponent(id);
+            }
+          } catch (err) { /* URL tidak dapat dibaca -> pakai halaman tanpa query */ }
+          return cocok[1];
+        }
+        return 'upload.html';
       }
 
       function tampilkanAlert(pesan, jenis) {

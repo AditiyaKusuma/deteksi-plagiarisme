@@ -388,6 +388,7 @@
 
         // Verifikasi dilakukan server; token & sesi disimpan IPPL.simpanLogin().
         IPPL.masuk(email, sandi).then(function (data) {
+          IPPL.simpanLogin(data);
           var peran = (data.user && data.user.peran) || 'Mahasiswa';
           var nama  = (data.user && data.user.nama) || 'Pengguna';
 
@@ -457,7 +458,7 @@
           loginPass.value = '';
           bukaTab('tabMasukBtn');
           tampilkanAlert('<i class="bi bi-check2-circle me-1"></i>'
-            + IPPL.esc((data && data.message) || 'Pendaftaran berhasil. Silakan masuk dengan akun barumu.'),
+            + IPPL.esc((data && data.message) || 'Pendaftaran berhasil. Silakan masuk dengan akun baramu.'),
             'success');
           loginPass.focus();
         }).catch(function (err) {

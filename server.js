@@ -1665,6 +1665,8 @@ const upload = multer({
  * 7. APLIKASI EXPRESS + CORS
  * ======================================================================== */
 
+// Import router modules akan dilakukan SETELAH handler didefinisikan
+
 const app = express();
 
 app.disable('x-powered-by');
@@ -1884,61 +1886,6 @@ function wajibAdmin(req, res, next) {
  * ======================================================================== */
 
 const router = express.Router();
-
-/* -------------------------- GET /api/health ------------------------------ */
-router.get('/health', (req, res) => {
-  const k = konfigLlm();
-
-  res.json({
-    status: 'success',
-    service: 'deteksi-plagiarisme-api',
-    version: '0.6.0',
-    progress: '50% (alur bertahap + status pemeriksaan)',
-    llm_siap: llmSiap(),
-    analysis_engine: llmSiap()
-      ? `llm-${k.penyedia}-v1 (${k.model})`
-      : 'simulasi-llm-v1 (fallback)',
-    llm: {
-      dikonfigurasi: llmSiap(),
-      provider: k.penyedia,
-      model: k.model,
-      base_url_host: hostLLM(),
-      json_mode: LLM_JSON_MODE,
-      max_kata: LLM_MAX_KATA,
-      timeout_ms: k.timeoutMs,
-      max_token: k.maxToken,
-      suhu: k.suhu,
-      fallback_simulasi: LLM_FALLBACK_SIMULASI,
-    },
-    ekstraksi_teks: {
-      pdf: 'pdf-parse',
-      docx: 'mammoth',
-      min_kata: MIN_KATA_TEREKSTRAKSI,
-    },
-    total_hasil: dbHasilAnalisis.length,
-    // Sebaran status pemeriksaan (FR-11) untuk halaman Beranda/panel Admin.
-    status_pemeriksaan: dbHasilAnalisis.reduce((hitung, rekaman) => {
-      const kunci = statusRekaman(rekaman);
-      hitung[kunci] = (hitung[kunci] || 0) + 1;
-      return hitung;
-    }, {}),
-    total_pengguna: dbPengguna.length,
-    maks_ukuran_mb: k.maksUkuranMb,
-    ai_config: {
-      tersimpan: basisData.adaKonfigAi(),
-      aktif: k.aktif,
-      penyedia: k.penyedia,
-      model: k.model,
-      ambang_tinggi: k.ambangTinggi,
-      ambang_sedang: k.ambangSedang,
-      maks_ukuran_mb: k.maksUkuranMb,
-      simpan_riwayat: k.simpanRiwayat,
-      tampil_sumber: k.tampilSumber,
-      koreksi_otomatis: k.koreksiOtomatis,
-    },
-    waktu_server: new Date().toISOString(),
-  });
-});
 
 /* ------------------------- POST /api/upload ------------------------------ */
 /**
@@ -2169,6 +2116,16 @@ async function tanganiSimpanDokumen(req, res, next) {
     next(err);
   }
 }
+
+// Set handler di middleware/upload agar routes bisa pakai
+const uploadMiddleware = require('./src/middleware/upload');
+uploadMiddleware.setTanganiUnggah(tanganiUnggah);
+uploadMiddleware.setTanganiSimpanDokumen(tanganiSimpanDokumen);
+
+// Import router modules SETELAH handler di-set
+const authRouter = require('./src/routes/auth');
+const dokumenRouter = require('./src/routes/dokumen');
+const adminRouter = require('./src/routes/admin');
 
 /** ID rekaman yang analisisnya sedang berjalan di latar belakang. */
 const analisisBerjalan = new Set();
@@ -2527,66 +2484,7 @@ const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
  * Body: { nama, email, password, nim? }
  * Exception UC-01: email sudah terdaftar -> HTTP 409.
  */
-router.post('/auth/register', (req, res, next) => {
-  try {
-    const body  = req.body || {};
-    const nama  = ambilField(body, 'nama', 'nama_lengkap', 'namaLengkap', 'name');
-    const email = ambilField(body, 'email', 'surel', 'username').toLowerCase();
-    const sandi = String(body.password === undefined ? (body.sandi || body.kata_sandi || '') : body.password);
-    const nim   = ambilField(body, 'nim', 'NIM', 'nim_mahasiswa', 'nimMahasiswa');
-    const peran = ambilField(body, 'peran', 'role').toLowerCase();
-
-    if (nama.length < 3) {
-      throw new AppError(400, 'Field "nama" wajib diisi, minimal 3 karakter.', { field: 'nama' });
-    }
-    if (nama.length > 60) {
-      throw new AppError(400, 'Field "nama" maksimal 60 karakter.', { field: 'nama' });
-    }
-    if (!RE_EMAIL.test(email)) {
-      throw new AppError(400, 'Field "email" tidak berformat email yang sah.', { email });
-    }
-    if (sandi.length < 8) {
-      throw new AppError(400, 'Field "password" minimal 8 karakter.', { field: 'password' });
-    }
-    if (nim && !/^[0-9]{8,12}$/.test(nim)) {
-      throw new AppError(400, 'Field "nim" harus berupa angka 8-12 digit.', { nim });
-    }
-    if (peran && peran !== PERAN_MAHASISWA.toLowerCase()) {
-      throw new AppError(400, 'Pendaftaran ini hanya untuk akun Mahasiswa.', { peran });
-    }
-    if (cariPenggunaEmail(email)) {
-      throw new AppError(409, `Email ${email} sudah terdaftar. `
-        + 'Silakan masuk atau gunakan email lain.', { email });
-    }
-
-    const pengguna = {
-      id: buatIdPengguna(),
-      nama,
-      nim: nim || null,
-      email,
-      password_hash: hashPassword(sandi),
-      peran: PERAN_MAHASISWA,
-      status: STATUS_AKTIF,
-      dibuat: new Date().toISOString(),
-      terakhir_masuk: null,
-    };
-
-    dbPengguna.push(pengguna);
-    if (!simpanPengguna()) {
-      dbPengguna.pop(); // jangan tinggalkan akun yang gagal disimpan
-      throw new AppError(500, 'Pendaftaran gagal: data pengguna tidak dapat disimpan.');
-    }
-
-    console.log(`[auth] pendaftaran baru: ${pengguna.email} (${pengguna.peran})`);
-    res.status(201).json({
-      status: 'success',
-      message: 'Pendaftaran berhasil. Silakan masuk dengan akun barumu.',
-      user: publikPengguna(pengguna),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+/* Auth routes dipindah ke src/routes/auth.js dan di-mount via authRouter */
 
 /* --------------------- POST /api/auth/login (UC-02) ---------------------- */
 /**
@@ -2595,60 +2493,7 @@ router.post('/auth/register', (req, res, next) => {
  * tertentu (mis. halaman Admin mengirim peran: "Administrator").
  * Balasan berisi token sesi (Authorization: Bearer) + data pengguna.
  */
-router.post('/auth/login', (req, res, next) => {
-  try {
-    const body  = req.body || {};
-    const email = ambilField(body, 'email', 'surel', 'username').toLowerCase();
-    const sandi = String(body.password === undefined ? (body.sandi || body.kata_sandi || '') : body.password);
-    const peranDiminta = ambilField(body, 'peran', 'role').toLowerCase();
-
-    if (!email || !sandi) {
-      throw new AppError(400, 'Field "email" dan "password" wajib diisi.');
-    }
-
-    const pengguna = cariPenggunaEmail(email);
-
-    // Pesan sengaja disamakan untuk email tidak dikenal dan kata sandi salah
-    // supaya keberadaan akun tidak dapat ditebak dari pesan galat.
-    if (!pengguna || !periksaPassword(sandi, pengguna.password_hash)) {
-      console.warn(`[auth] gagal masuk: ${email || '(email kosong)'}`);
-      throw new AppError(401, 'Data akun tidak sesuai. Periksa kembali email dan password.');
-    }
-    if (String(pengguna.status) !== STATUS_AKTIF) {
-      throw new AppError(403, 'Akun ini sedang tidak aktif. Hubungi Administrator.');
-    }
-    if (peranDiminta && peranDiminta !== String(pengguna.peran).toLowerCase()) {
-      throw new AppError(403, `Akun ini berperan ${pengguna.peran}, bukan ${peranDiminta}.`, {
-        peran: pengguna.peran,
-      });
-    }
-
-    pengguna.terakhir_masuk = new Date().toISOString();
-    simpanPengguna();
-
-    const { token, payload } = buatTokenSesi(pengguna);
-    console.log(`[auth] masuk: ${pengguna.email} (${pengguna.peran})`);
-
-    res.json({
-      status: 'success',
-      message: `Selamat datang, ${pengguna.nama}.`,
-      token,
-      tipe: 'Bearer',
-      kedaluwarsa: new Date(payload.exp).toISOString(),
-      user: publikPengguna(pengguna),
-      // Bentuk sesi siap pakai untuk sessionStorage pada login.html / login-admin.html.
-      sesi: {
-        nama: pengguna.nama,
-        nim: pengguna.nim || '',
-        email: pengguna.email,
-        peran: pengguna.peran,
-        masuk: new Date(payload.iat).toISOString(),
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+/* POST /api/auth/login dipindah ke src/routes/auth.js */
 
 /* ------------------- POST /api/auth/logout (UC-08/14) -------------------- */
 /**
@@ -2656,16 +2501,7 @@ router.post('/auth/login', (req, res, next) => {
  * dapat dipakai lagi walau masa berlakunya belum habis (lihat 7.2).
  * Frontend juga menghapus token dari sessionStorage (public/js/ippl-api.js).
  */
-router.post('/auth/logout', wajibLogin, (req, res) => {
-  const dicabut = cabutSesi(req.sesi);
-  console.log(`[auth] keluar: ${req.pengguna.email}${dicabut ? '' : ' (token tanpa jti)'}`);
-
-  res.json({
-    status: 'success',
-    message: 'Sesi berhasil diakhiri. Silakan masuk kembali bila diperlukan.',
-    dicabut,
-  });
-});
+/* POST /api/auth/logout dipindah ke src/routes/auth.js */
 
 /* ==========================================================================
  * 8.8 PANEL ADMIN (UC-09 s/d UC-13) — wajib token Administrator
@@ -3047,6 +2883,63 @@ router.post('/admin/ai-config/test', wajibLogin, wajibAdmin, async (req, res, ne
   }
 });
 
+// Health endpoint — PUBLIC (tanpa auth)
+app.get('/api/health', (req, res) => {
+  const k = konfigLlm();
+
+  res.json({
+    status: 'success',
+    service: 'deteksi-plagiarisme-api',
+    version: '0.6.0',
+    progress: '50% (alur bertahap + status pemeriksaan)',
+    llm_siap: llmSiap(),
+    analysis_engine: llmSiap()
+      ? `llm-${k.penyedia}-v1 (${k.model})`
+      : 'simulasi-llm-v1 (fallback)',
+    llm: {
+      dikonfigurasi: llmSiap(),
+      provider: k.penyedia,
+      model: k.model,
+      base_url_host: hostLLM(),
+      json_mode: LLM_JSON_MODE,
+      max_kata: LLM_MAX_KATA,
+      timeout_ms: k.timeoutMs,
+      max_token: k.maxToken,
+      suhu: k.suhu,
+      fallback_simulasi: LLM_FALLBACK_SIMULASI,
+    },
+    ekstraksi_teks: {
+      pdf: 'pdf-parse',
+      docx: 'mammoth',
+      min_kata: MIN_KATA_TEREKSTRAKSI,
+    },
+    total_hasil: dbHasilAnalisis.length,
+    status_pemeriksaan: dbHasilAnalisis.reduce((hitung, rekaman) => {
+      const kunci = statusRekaman(rekaman);
+      hitung[kunci] = (hitung[kunci] || 0) + 1;
+      return hitung;
+    }, {}),
+    total_pengguna: dbPengguna.length,
+    maks_ukuran_mb: k.maksUkuranMb,
+    ai_config: {
+      tersimpan: basisData.adaKonfigAi(),
+      aktif: k.aktif,
+      penyedia: k.penyedia,
+      model: k.model,
+      ambang_tinggi: k.ambangTinggi,
+      ambang_sedang: k.ambangSedang,
+      maks_ukuran_mb: k.maksUkuranMb,
+      simpan_riwayat: k.simpanRiwayat,
+      tampil_sumber: k.tampilSumber,
+      koreksi_otomatis: k.koreksiOtomatis,
+    },
+    waktu_server: new Date().toISOString(),
+  });
+});
+
+app.use('/api', authRouter);
+app.use('/api', dokumenRouter);
+app.use('/api', adminRouter);
 app.use('/api', router);
 
 /* ==========================================================================
